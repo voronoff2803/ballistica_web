@@ -1,0 +1,183 @@
+cmake_minimum_required(VERSION 3.20)
+
+# iOS toolchain must be set via -DCMAKE_SYSTEM_NAME=iOS on the command line.
+project(BallisticaIOSDemo LANGUAGES C CXX OBJC OBJCXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Minimum iOS version.
+if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "15.0")
+endif()
+
+set(APP_NAME BallisticaIOSDemo)
+
+# Root of the engine source tree.
+set(BA_SRC_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+
+# ----- ODE physics library (from ballistica external deps) -----
+set(ODE_SRC_ROOT ${BA_SRC_ROOT}/external/open_dynamics_engine-ef)
+
+add_library(ode STATIC
+    ${ODE_SRC_ROOT}/ode/IceAABB.cpp
+    ${ODE_SRC_ROOT}/ode/IceContainer.cpp
+    ${ODE_SRC_ROOT}/ode/IceHPoint.cpp
+    ${ODE_SRC_ROOT}/ode/IceIndexedTriangle.cpp
+    ${ODE_SRC_ROOT}/ode/IceMatrix3x3.cpp
+    ${ODE_SRC_ROOT}/ode/IceMatrix4x4.cpp
+    ${ODE_SRC_ROOT}/ode/IceOBB.cpp
+    ${ODE_SRC_ROOT}/ode/IcePlane.cpp
+    ${ODE_SRC_ROOT}/ode/IcePoint.cpp
+    ${ODE_SRC_ROOT}/ode/IceRandom.cpp
+    ${ODE_SRC_ROOT}/ode/IceRay.cpp
+    ${ODE_SRC_ROOT}/ode/IceRevisitedRadix.cpp
+    ${ODE_SRC_ROOT}/ode/IceSegment.cpp
+    ${ODE_SRC_ROOT}/ode/IceTriangle.cpp
+    ${ODE_SRC_ROOT}/ode/IceUtils.cpp
+    ${ODE_SRC_ROOT}/ode/ode.cpp
+    ${ODE_SRC_ROOT}/ode/ode_array.cpp
+    ${ODE_SRC_ROOT}/ode/ode_collision_cylinder_box.cpp
+    ${ODE_SRC_ROOT}/ode/ode_collision_cylinder_plane.cpp
+    ${ODE_SRC_ROOT}/ode/ode_collision_cylinder_sphere.cpp
+    ${ODE_SRC_ROOT}/ode/ode_collision_cylinder_trimesh.cpp
+    ${ODE_SRC_ROOT}/ode/ode_collision_kernel.cpp
+    ${ODE_SRC_ROOT}/ode/ode_collision_quadtreespace.cpp
+    ${ODE_SRC_ROOT}/ode/ode_collision_sapspace.cpp
+    ${ODE_SRC_ROOT}/ode/ode_collision_space.cpp
+    ${ODE_SRC_ROOT}/ode/ode_collision_std.cpp
+    ${ODE_SRC_ROOT}/ode/ode_collision_transform.cpp
+    ${ODE_SRC_ROOT}/ode/ode_collision_trimesh.cpp
+    ${ODE_SRC_ROOT}/ode/ode_collision_trimesh_box.cpp
+    ${ODE_SRC_ROOT}/ode/ode_collision_trimesh_ccylinder.cpp
+    ${ODE_SRC_ROOT}/ode/ode_collision_trimesh_distance.cpp
+    ${ODE_SRC_ROOT}/ode/ode_collision_trimesh_plane.cpp
+    ${ODE_SRC_ROOT}/ode/ode_collision_trimesh_ray.cpp
+    ${ODE_SRC_ROOT}/ode/ode_collision_trimesh_sphere.cpp
+    ${ODE_SRC_ROOT}/ode/ode_collision_trimesh_trimesh.cpp
+    ${ODE_SRC_ROOT}/ode/ode_collision_util.cpp
+    ${ODE_SRC_ROOT}/ode/ode_error.cpp
+    ${ODE_SRC_ROOT}/ode/ode_export-diff.cpp
+    ${ODE_SRC_ROOT}/ode/ode_fastdot.cpp
+    ${ODE_SRC_ROOT}/ode/ode_fastldlt.cpp
+    ${ODE_SRC_ROOT}/ode/ode_fastlsolve.cpp
+    ${ODE_SRC_ROOT}/ode/ode_fastltsolve.cpp
+    ${ODE_SRC_ROOT}/ode/ode_joint.cpp
+    ${ODE_SRC_ROOT}/ode/ode_lcp.cpp
+    ${ODE_SRC_ROOT}/ode/ode_mass.cpp
+    ${ODE_SRC_ROOT}/ode/ode_mat.cpp
+    ${ODE_SRC_ROOT}/ode/ode_math.cpp
+    ${ODE_SRC_ROOT}/ode/ode_matrix.cpp
+    ${ODE_SRC_ROOT}/ode/ode_memory.cpp
+    ${ODE_SRC_ROOT}/ode/ode_misc.cpp
+    ${ODE_SRC_ROOT}/ode/ode_obstack.cpp
+    ${ODE_SRC_ROOT}/ode/ode_quickstep.cpp
+    ${ODE_SRC_ROOT}/ode/ode_rotation.cpp
+    ${ODE_SRC_ROOT}/ode/ode_step.cpp
+    ${ODE_SRC_ROOT}/ode/ode_stepfast.cpp
+    ${ODE_SRC_ROOT}/ode/ode_timer.cpp
+    ${ODE_SRC_ROOT}/ode/ode_util.cpp
+    ${ODE_SRC_ROOT}/ode/OPC_AABBCollider.cpp
+    ${ODE_SRC_ROOT}/ode/OPC_AABBTree.cpp
+    ${ODE_SRC_ROOT}/ode/OPC_BaseModel.cpp
+    ${ODE_SRC_ROOT}/ode/OPC_BoxPruning.cpp
+    ${ODE_SRC_ROOT}/ode/OPC_Collider.cpp
+    ${ODE_SRC_ROOT}/ode/OPC_HybridModel.cpp
+    ${ODE_SRC_ROOT}/ode/OPC_LSSCollider.cpp
+    ${ODE_SRC_ROOT}/ode/OPC_MeshInterface.cpp
+    ${ODE_SRC_ROOT}/ode/OPC_Model.cpp
+    ${ODE_SRC_ROOT}/ode/OPC_OBBCollider.cpp
+    ${ODE_SRC_ROOT}/ode/OPC_OptimizedTree.cpp
+    ${ODE_SRC_ROOT}/ode/OPC_PlanesCollider.cpp
+    ${ODE_SRC_ROOT}/ode/OPC_RayCollider.cpp
+    ${ODE_SRC_ROOT}/ode/OPC_SphereCollider.cpp
+    ${ODE_SRC_ROOT}/ode/OPC_SweepAndPrune.cpp
+    ${ODE_SRC_ROOT}/ode/OPC_TreeBuilders.cpp
+    ${ODE_SRC_ROOT}/ode/OPC_TreeCollider.cpp
+    ${ODE_SRC_ROOT}/ode/OPC_VolumeCollider.cpp
+    ${ODE_SRC_ROOT}/ode/Opcode.cpp
+)
+target_include_directories(ode PUBLIC ${ODE_SRC_ROOT})
+target_include_directories(ode PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/ode_stubs)
+target_compile_options(ode PRIVATE -w)
+target_compile_definitions(ode PRIVATE dNODEBUG=1)
+set_property(TARGET ode PROPERTY POSITION_INDEPENDENT_CODE ON)
+
+# ----- Engine renderer sources (compiled as-is from the engine) -----
+set(ENGINE_SOURCES
+    # GL renderer (the main target — 3400 lines)
+    ${BA_SRC_ROOT}/ballistica/base/graphics/gl/renderer_gl.cc
+    ${BA_SRC_ROOT}/ballistica/base/graphics/gl/gl_sys.cc
+    # Renderer base class
+    ${BA_SRC_ROOT}/ballistica/base/graphics/renderer/renderer.cc
+    # Render pass & target
+    ${BA_SRC_ROOT}/ballistica/base/graphics/renderer/render_pass.cc
+    ${BA_SRC_ROOT}/ballistica/base/graphics/renderer/render_target.cc
+    # Frame definition
+    ${BA_SRC_ROOT}/ballistica/base/graphics/support/frame_def.cc
+    # Mesh data
+    ${BA_SRC_ROOT}/ballistica/base/graphics/mesh/mesh_data.cc
+    ${BA_SRC_ROOT}/ballistica/base/graphics/mesh/mesh_data_client_handle.cc
+    # Graphics settings
+    ${BA_SRC_ROOT}/ballistica/base/graphics/support/graphics_settings.cc
+    ${BA_SRC_ROOT}/ballistica/base/graphics/support/graphics_client_context.cc
+    # Math
+    ${BA_SRC_ROOT}/ballistica/shared/math/matrix44f.cc
+)
+
+# ----- App sources -----
+set(APP_SOURCES
+    src/main.mm
+    src/AppDelegate.h
+    src/AppDelegate.mm
+    src/GameViewController.h
+    src/GameViewController.mm
+    src/PhysicsTest.h
+    src/PhysicsTest.cc
+    src/Renderer.h
+    src/Renderer.cc
+    src/DemoScene.h
+    src/DemoScene.cc
+    # Engine integration shims
+    src/engine_shims.h
+    src/engine_shims.cc
+)
+
+add_executable(${APP_NAME} MACOSX_BUNDLE ${APP_SOURCES} ${ENGINE_SOURCES})
+
+set_target_properties(${APP_NAME} PROPERTIES
+    MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Info.plist"
+    XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.ballistica.iosdemo"
+    XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
+    XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY ""
+    XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED "NO"
+    XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED "NO"
+    XCODE_ATTRIBUTE_CLANG_ENABLE_OBJC_ARC "YES"
+    XCODE_ATTRIBUTE_ENABLE_BITCODE "NO"
+)
+
+# Include paths: engine root (so "ballistica/..." includes work).
+target_include_directories(${APP_NAME} PRIVATE
+    ${BA_SRC_ROOT}
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+# Force-include our build config before all engine sources.
+target_compile_options(${APP_NAME} PRIVATE
+    -include ${CMAKE_CURRENT_SOURCE_DIR}/src/buildconfig_ios_demo.h
+)
+
+# Suppress OpenGL ES deprecation warnings.
+target_compile_definitions(${APP_NAME} PRIVATE
+    GLES_SILENCE_DEPRECATION=1
+)
+
+target_link_libraries(${APP_NAME} PRIVATE
+    ode
+    "-framework UIKit"
+    "-framework Foundation"
+    "-framework CoreGraphics"
+    "-framework QuartzCore"
+    "-framework OpenGLES"
+    "-framework GLKit"
+)

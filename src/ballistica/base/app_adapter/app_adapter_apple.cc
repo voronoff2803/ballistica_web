@@ -207,6 +207,9 @@ void AppAdapterApple::SetHardwareCursorVisible(bool visible) {
 void AppAdapterApple::TerminateApp() {
 #if BA_PLATFORM_MACOS
   BallisticaKit::CocoaFromCpp::terminateApp();
+#elif BA_PLATFORM_IOS_TVOS
+  // iOS apps shouldn't call exit(), but it's better than FatalError.
+  exit(0);
 #else
   AppAdapter::TerminateApp();
 #endif
@@ -240,7 +243,14 @@ auto AppAdapterApple::FullscreenControlKeyShortcut() const
   return "fn+F";
 }
 
-auto AppAdapterApple::HasDirectKeyboardInput() -> bool { return true; };
+auto AppAdapterApple::HasDirectKeyboardInput() -> bool {
+#if BA_PLATFORM_MACOS
+  return true;
+#else
+  // iOS/tvOS: no physical keyboard by default.
+  return false;
+#endif
+}
 
 auto AppAdapterApple::GetKeyRepeatDelay() -> float {
 #if BA_PLATFORM_MACOS

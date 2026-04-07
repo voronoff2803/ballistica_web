@@ -29,7 +29,9 @@ local.properties
 .clang-format
 .style.yapf
 .irony
-.claude/worktrees/
+.claude/
+build-ios/
+build-ios-device/
 PUBSYNC_IN_PROGRESS
 _fulltest_buildfile_*
 ballistica_files/

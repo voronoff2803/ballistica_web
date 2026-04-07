@@ -19,6 +19,9 @@ void RenderTarget::OnScreenSizeChange() {
   assert(type_ == Type::kScreen);
   physical_width_ = g_base->graphics_server->screen_pixel_width();
   physical_height_ = g_base->graphics_server->screen_pixel_height();
+  // Clamp to at least 1 to prevent 0x0 framebuffer creation downstream.
+  if (physical_width_ < 1.0f) physical_width_ = 1.0f;
+  if (physical_height_ < 1.0f) physical_height_ = 1.0f;
 }
 
 auto RenderTarget::GetScissorX(float x) const -> float {

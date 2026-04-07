@@ -1155,8 +1155,12 @@ auto Assets::FindAssetFile(FileType type, const std::string& name)
       // On most android builds we go for .ktx, which contains etc2 and etc1.
       ext = ".ktx";
 #elif BA_PLATFORM_IOS_TVOS
-      // On iOS we use pvr.
+      // On iOS device we use pvr; on simulator use dds (PVRTC not supported).
+#if BA_IOS_DDS_TEXTURES
+      ext = ".dds";
+#else
       ext = ".pvr";
+#endif
 #else
       // all else defaults to dds
       ext = ".dds";

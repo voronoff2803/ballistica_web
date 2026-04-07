@@ -1,0 +1,151 @@
+cmake_minimum_required(VERSION 3.20)
+project(BallisticaKit LANGUAGES C CXX OBJC OBJCXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "15.0")
+endif()
+
+set(APP_NAME BallisticaKit)
+set(BA_SRC_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+
+# =============================================================================
+# Python 3.13 XCFramework
+# =============================================================================
+set(PYTHON_FRAMEWORK_DIR ${CMAKE_CURRENT_SOURCE_DIR}/deps/Python.xcframework)
+
+# Determine the correct Python platform directory.
+if(CMAKE_OSX_SYSROOT MATCHES "simulator" OR NOT CMAKE_OSX_SYSROOT)
+    set(PYTHON_PLATFORM_DIR ${PYTHON_FRAMEWORK_DIR}/ios-arm64_x86_64-simulator)
+else()
+    set(PYTHON_PLATFORM_DIR ${PYTHON_FRAMEWORK_DIR}/ios-arm64)
+endif()
+
+set(PYTHON_INCLUDE_DIR ${PYTHON_PLATFORM_DIR}/include/python3.13)
+set(PYTHON_LIB_DIR ${PYTHON_PLATFORM_DIR}/lib)
+set(PYTHON_STDLIB_DIR ${PYTHON_FRAMEWORK_DIR}/lib/python3.13)
+
+# =============================================================================
+# ODE physics library
+# =============================================================================
+set(ODE_SRC_ROOT ${BA_SRC_ROOT}/external/open_dynamics_engine-ef)
+
+file(GLOB ODE_SOURCES
+    ${ODE_SRC_ROOT}/ode/*.cpp
+)
+add_library(ode STATIC ${ODE_SOURCES})
+target_include_directories(ode PUBLIC ${ODE_SRC_ROOT})
+target_include_directories(ode PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/ode_stubs)
+target_compile_options(ode PRIVATE -w)
+target_compile_definitions(ode PRIVATE dNODEBUG=1)
+
+# =============================================================================
+# Engine sources — collect all .cc files, exclude platform-specific ones
+# =============================================================================
+file(GLOB_RECURSE ALL_ENGINE_CC "${BA_SRC_ROOT}/ballistica/*.cc")
+
+# Exclude platform-specific files we don't want.
+list(FILTER ALL_ENGINE_CC EXCLUDE REGEX "/linux/")
+list(FILTER ALL_ENGINE_CC EXCLUDE REGEX "/windows/")
+list(FILTER ALL_ENGINE_CC EXCLUDE REGEX "/android/")
+list(FILTER ALL_ENGINE_CC EXCLUDE REGEX "gl_sys_windows")
+list(FILTER ALL_ENGINE_CC EXCLUDE REGEX "/template_fs/")
+
+# Exclude all specialized app adapters (we provide our own ObjC adapter).
+list(FILTER ALL_ENGINE_CC EXCLUDE REGEX "app_adapter_sdl\\.cc")
+list(FILTER ALL_ENGINE_CC EXCLUDE REGEX "app_adapter_headless\\.cc")
+list(FILTER ALL_ENGINE_CC EXCLUDE REGEX "app_adapter_vr\\.cc")
+list(FILTER ALL_ENGINE_CC EXCLUDE REGEX "app_adapter_apple\\.cc")
+
+# Exclude Apple platform files that require Swift bridging headers.
+list(FILTER ALL_ENGINE_CC EXCLUDE REGEX "app_platform_apple\\.cc")
+list(FILTER ALL_ENGINE_CC EXCLUDE REGEX "platform_apple\\.cc")
+
+# Exclude VR graphics.
+list(FILTER ALL_ENGINE_CC EXCLUDE REGEX "graphics_vr\\.cc")
+
+# Exclude discord (requires external SDK).
+list(FILTER ALL_ENGINE_CC EXCLUDE REGEX "discord\\.cc")
+
+# Also collect .c files (OGG/Vorbis etc).
+file(GLOB_RECURSE ALL_ENGINE_C "${BA_SRC_ROOT}/ballistica/*.c")
+
+# Collect Objective-C++ files (.mm) for Apple platform code.
+file(GLOB_RECURSE ALL_ENGINE_MM "${BA_SRC_ROOT}/ballistica/*.mm")
+
+# External libraries (OGG, Vorbis, etc.).
+file(GLOB_RECURSE EXTERNAL_C
+    "${BA_SRC_ROOT}/external/open_dynamics_engine-ef/*.c"
+)
+# ODE is built separately, exclude it.
+set(EXTERNAL_C "")
+
+file(GLOB_RECURSE OGG_VORBIS_C
+    "${BA_SRC_ROOT}/external/ogg_and_vorbis/*.c"
+)
+
+# =============================================================================
+# App target
+# =============================================================================
+add_executable(${APP_NAME} MACOSX_BUNDLE
+    ${ALL_ENGINE_CC}
+    ${ALL_ENGINE_C}
+    ${ALL_ENGINE_MM}
+    ${OGG_VORBIS_C}
+    # iOS app entry point — we'll create this.
+    src/ios_main.mm
+)
+
+set_target_properties(${APP_NAME} PROPERTIES
+    MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Info.plist"
+    XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.ballistica.ios"
+    XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
+    XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY ""
+    XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED "NO"
+    XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED "NO"
+    XCODE_ATTRIBUTE_CLANG_ENABLE_OBJC_ARC "YES"
+    XCODE_ATTRIBUTE_ENABLE_BITCODE "NO"
+)
+
+# Include paths.
+target_include_directories(${APP_NAME} PRIVATE
+    ${BA_SRC_ROOT}                    # ballistica/ headers
+    ${BA_SRC_ROOT}/external           # external deps headers
+    ${PYTHON_INCLUDE_DIR}             # Python.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src   # local headers
+)
+
+# Force-include our build config before all sources.
+target_compile_options(${APP_NAME} PRIVATE
+    -include ${CMAKE_CURRENT_SOURCE_DIR}/src/buildconfig_ios.h
+    -Wno-deprecated-declarations
+)
+
+target_compile_definitions(${APP_NAME} PRIVATE
+    GLES_SILENCE_DEPRECATION=1
+)
+
+# Link libraries.
+target_link_libraries(${APP_NAME} PRIVATE
+    ode
+    ${PYTHON_LIB_DIR}/libpython3.13.dylib
+    "-framework UIKit"
+    "-framework Foundation"
+    "-framework CoreGraphics"
+    "-framework QuartzCore"
+    "-framework OpenGLES"
+    "-framework GLKit"
+    "-framework OpenAL"
+    "-framework AudioToolbox"
+    "-framework AVFoundation"
+    "-framework CoreHaptics"
+    "-framework GameController"
+    "-framework StoreKit"
+)
+
+# Embed Python dylib in the app bundle.
+set_target_properties(${APP_NAME} PROPERTIES
+    XCODE_ATTRIBUTE_LD_RUNPATH_SEARCH_PATHS "@executable_path/Frameworks"
+)

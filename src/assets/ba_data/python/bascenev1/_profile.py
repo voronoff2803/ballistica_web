@@ -66,7 +66,7 @@ def get_player_profile_colors(
     """Given a profile, return colors for them."""
     appconfig = babase.app.config
     if profiles is None:
-        profiles = appconfig['Player Profiles']
+        profiles = appconfig.get('Player Profiles', {})
 
     # Special case: when being asked for a random color in kiosk mode,
     # always return default purple.
