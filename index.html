@@ -38,7 +38,6 @@
     display: block; width: 100%; height: 100%;
     background: #000; border: 0; outline: 0;
   }
-  #output { display: none; }
 </style>
 </head>
 <body>
@@ -50,7 +49,6 @@
 </div>
 
 <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
-<textarea id="output" rows="1"></textarea>
 
 <script>
 (function() {
@@ -62,35 +60,96 @@
   setInterval(function() { idx = (idx + 1) % 12; img.src = frames[idx]; }, 80);
 })();
 
-var canvasElement = document.getElementById('canvas');
-var statusElement = document.getElementById('status');
 var progressBar = document.getElementById('progress-bar');
+var statusEl = document.getElementById('status');
 var overlay = document.getElementById('loading-overlay');
+var canvasEl = document.getElementById('canvas');
 
-canvasElement.addEventListener('webglcontextlost', function(e) {
+canvasEl.addEventListener('webglcontextlost', function(e) {
   alert('WebGL context lost. Reload the page.'); e.preventDefault();
 }, false);
 
-var setStatus = function(text) {
-  if (!text) { overlay.classList.add('hidden'); return; }
-  statusElement.textContent = text;
-  var m = text.match(/\((\d+(\.\d+)?)\/(\d+)\)/);
-  if (m) progressBar.style.width = (parseFloat(m[1]) / parseFloat(m[3]) * 100) + '%';
-};
+var PARTS = [
+  'BallisticaKit.data.part.aa','BallisticaKit.data.part.ab',
+  'BallisticaKit.data.part.ac','BallisticaKit.data.part.ad',
+  'BallisticaKit.data.part.ae','BallisticaKit.data.part.af',
+  'BallisticaKit.data.part.ag'
+];
+var TOTAL_SIZE = 260371936;
 
-var Module = {
-  print: function() { console.log(Array.prototype.slice.call(arguments).join(' ')); },
-  canvas: canvasElement,
-  setStatus: setStatus,
-  totalDependencies: 0,
-  monitorRunDependencies: function(left) {
-    this.totalDependencies = Math.max(this.totalDependencies, left);
-    setStatus(left ? 'Loading... (' + (this.totalDependencies - left) + '/' + this.totalDependencies + ')' : '');
+async function loadDataParts() {
+  var chunks = [], loaded = 0;
+  for (var i = 0; i < PARTS.length; i++) {
+    statusEl.textContent = 'Downloading (' + (i + 1) + '/' + PARTS.length + ')...';
+    var resp = await fetch(PARTS[i]);
+    var reader = resp.body.getReader();
+    var pc = [];
+    while (true) {
+      var r = await reader.read();
+      if (r.done) break;
+      pc.push(r.value);
+      loaded += r.value.length;
+      progressBar.style.width = (loaded / TOTAL_SIZE * 85).toFixed(0) + '%';
+    }
+    var sz = pc.reduce(function(a, c) { return a + c.length; }, 0);
+    var buf = new Uint8Array(sz);
+    var off = 0;
+    for (var c of pc) { buf.set(c, off); off += c.length; }
+    chunks.push(buf);
   }
-};
-setStatus('Loading...');
-window.onerror = function(msg) { setStatus('Error'); console.error(msg); };
+  var full = new Uint8Array(loaded);
+  var o = 0;
+  for (var ch of chunks) { full.set(ch, o); o += ch.length; }
+  return full.buffer;
+}
+
+async function startGame() {
+  var dataBuffer = await loadDataParts();
+  statusEl.textContent = 'Starting engine...';
+  progressBar.style.width = '90%';
+
+  window.Module = {
+    canvas: canvasEl,
+    locateFile: function(path) { return path; },
+    getPreloadedPackage: function(name, size) {
+      return dataBuffer;
+    },
+    print: function(text) {
+      if (text.indexOf('chaos') === -1 && text.indexOf('trailing_dist') === -1)
+        console.log(text);
+    },
+    printErr: function(text) {
+      if (text.indexOf('chaos') === -1 && text.indexOf('trailing_dist') === -1
+          && text.indexOf('preloading') === -1 && text.indexOf('ConvertToUncompressed') === -1
+          && text.indexOf('loading texture') === -1 && text.indexOf('allocating mesh') === -1)
+        console.warn(text);
+    },
+    onRuntimeInitialized: function() {
+      progressBar.style.width = '100%';
+      statusEl.textContent = '';
+      setTimeout(function() { overlay.classList.add('hidden'); }, 300);
+    }
+  };
+
+  canvasEl.width = window.innerWidth;
+  canvasEl.height = window.innerHeight;
+  window.addEventListener('resize', function() {
+    canvasEl.width = window.innerWidth;
+    canvasEl.height = window.innerHeight;
+  });
+  window.addEventListener('beforeunload', function() {
+    if (typeof FS !== 'undefined') FS.syncfs(false, function() {});
+  });
+  document.addEventListener('visibilitychange', function() {
+    if (document.hidden && typeof FS !== 'undefined') FS.syncfs(false, function() {});
+  });
+
+  var script = document.createElement('script');
+  script.src = 'BallisticaKit.js';
+  document.body.appendChild(script);
+}
+
+startGame();
 </script>
-<script async src="BallisticaKit.js"></script>
 </body>
 </html>
