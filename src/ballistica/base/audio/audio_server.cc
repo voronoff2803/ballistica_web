@@ -47,6 +47,9 @@ extern std::string g_rift_audio_device_name;
 // we can still compile under older versions and we'll pick up available
 // features at runtime.
 #if BA_ENABLE_AUDIO
+
+#if !BA_PLATFORM_WEB
+// OpenALSoft extensions (not available in Emscripten's OpenAL).
 #define ALC_API_NOEXCEPT17_ noexcept
 #define AL_API_NOEXCEPT17_ noexcept
 typedef void(ALC_APIENTRY* LPALCDEVICEPAUSESOFT_)(ALCdevice* device)
@@ -81,7 +84,38 @@ typedef ALCenum(ALC_APIENTRY* LPALCEVENTISSUPPORTEDSOFT_)(
 #define AL_EVENT_TYPE_DISCONNECTED_SOFT_ 0x19A6
 #define ALC_EVENT_TYPE_DEFAULT_DEVICE_CHANGED_SOFT_ 0x19D6
 #define ALC_PLAYBACK_DEVICE_SOFT_ 0x19D4
+#endif  // !BA_PLATFORM_WEB
 #define ALC_EVENT_SUPPORTED_SOFT_ 0x19D9
+
+#if !BA_PLATFORM_WEB
+static LPALCDEVICEPAUSESOFT_ alcDevicePauseSOFT{};
+static LPALCDEVICERESUMESOFT_ alcDeviceResumeSOFT{};
+static LPALCRESETDEVICESOFT_ alcResetDeviceSOFT{};
+static LPALCREOPENDEVICESOFT_ alcReopenDeviceSOFT{};
+static LPALEVENTCALLBACKSOFT_ alEventCallbackSOFT{};
+static LPALEVENTCONTROLSOFT_ alEventControlSOFT{};
+static LPALCEVENTCALLBACKSOFT_ alcEventCallbackSOFT{};
+static LPALCEVENTCONTROLSOFT_ alcEventControlSOFT{};
+static LPALCEVENTISSUPPORTEDSOFT_ alcEventIsSupportedSOFT{};
+#else  // BA_PLATFORM_WEB
+// On web, OpenALSoft extensions aren't available. Define the types
+// as function pointers so the null-checks compile, but they'll always
+// be nullptr so the bodies are never reached.
+typedef void (*LPALCDEVICEPAUSESOFT_)(ALCdevice*);
+typedef void (*LPALCDEVICERESUMESOFT_)(ALCdevice*);
+typedef ALCboolean (*LPALCRESETDEVICESOFT_)(ALCdevice*, const ALCint*);
+typedef ALCboolean (*LPALCREOPENDEVICESOFT_)(ALCdevice*, const ALCchar*,
+                                             const ALCint*);
+typedef void (*ALEVENTPROCSOFT_)(ALenum, ALuint, ALuint, ALsizei,
+                                 const ALchar*, void*);
+typedef void (*LPALEVENTCALLBACKSOFT_)(ALEVENTPROCSOFT_, void*);
+typedef void (*LPALEVENTCONTROLSOFT_)(ALsizei, const ALenum*, ALboolean);
+typedef void (*ALCEVENTPROCTYPESOFT_)(ALCenum, ALCenum, ALCdevice*, ALCsizei,
+                                      const ALCchar*, void*);
+typedef void (*LPALCEVENTCALLBACKSOFT_)(ALCEVENTPROCTYPESOFT_, void*);
+typedef ALCboolean (*LPALCEVENTCONTROLSOFT_)(ALCsizei, const ALCenum*,
+                                             ALCboolean);
+typedef ALCenum (*LPALCEVENTISSUPPORTEDSOFT_)(ALCenum, ALCenum);
 
 static LPALCDEVICEPAUSESOFT_ alcDevicePauseSOFT{};
 static LPALCDEVICERESUMESOFT_ alcDeviceResumeSOFT{};
@@ -92,6 +126,12 @@ static LPALEVENTCONTROLSOFT_ alEventControlSOFT{};
 static LPALCEVENTCALLBACKSOFT_ alcEventCallbackSOFT{};
 static LPALCEVENTCONTROLSOFT_ alcEventControlSOFT{};
 static LPALCEVENTISSUPPORTEDSOFT_ alcEventIsSupportedSOFT{};
+#define ALC_CONNECTED_ 0x313
+#define AL_EVENT_TYPE_DISCONNECTED_SOFT_ 0x19A6
+#define ALC_EVENT_TYPE_DEFAULT_DEVICE_CHANGED_SOFT_ 0x19D6
+#define ALC_PLAYBACK_DEVICE_SOFT_ 0x19D4
+#define ALC_EVENT_SUPPORTED_SOFT_ 0x19D9
+#endif  // BA_PLATFORM_WEB
 #endif  // BA_ENABLE_AUDIO
 
 const int kAudioProcessIntervalNormal{500 * 1000};
@@ -485,6 +525,7 @@ void AudioServer::Start_() {
              + "\n  Device: " + device_name + env_note;
     });
 
+#if !BA_PLATFORM_WEB
     alcDevicePauseSOFT = reinterpret_cast<LPALCDEVICEPAUSESOFT_>(
         alcGetProcAddress(device, "alcDevicePauseSOFT"));
     alcDeviceResumeSOFT = reinterpret_cast<LPALCDEVICERESUMESOFT_>(
@@ -520,6 +561,7 @@ void AudioServer::Start_() {
 
     alcEventIsSupportedSOFT = reinterpret_cast<LPALCEVENTISSUPPORTEDSOFT_>(
         alcGetProcAddress(device, "alcEventIsSupportedSOFT"));
+#endif  // !BA_PLATFORM_WEB
 
     if (alEventCallbackSOFT != nullptr && alEventControlSOFT != nullptr) {
       // Set ourself up to recieve these type of callbacks.

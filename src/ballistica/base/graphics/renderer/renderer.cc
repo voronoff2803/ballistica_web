@@ -131,6 +131,10 @@ void Renderer::RenderFrameDef(FrameDef* frame_def) {
   }
 
   bool backing_needs_clear = frame_def->needs_clear();
+#if BA_PLATFORM_WEB
+  // On web, always clear to avoid undefined framebuffer content.
+  backing_needs_clear = true;
+#endif
 #if BA_VARIANT_CARDBOARD
   // On cardboard, our two eyes are drawn into the same FBO,
   // so we can't invalidate the buffer when drawing our second eye

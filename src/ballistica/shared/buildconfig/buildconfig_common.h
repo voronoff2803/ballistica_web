@@ -89,9 +89,15 @@ namespace ballistica {
 #define BA_PLATFORM_LINUX 0
 #endif
 
+// Are we building for Web (Emscripten/WASM)?
+#ifndef BA_PLATFORM_WEB
+#define BA_PLATFORM_WEB 0
+#endif
+
 // Make sure exactly one of those is defined as 1
-#if (BA_PLATFORM_WINDOWS + BA_PLATFORM_MACOS + BA_PLATFORM_IOS     \
-     + BA_PLATFORM_TVOS + BA_PLATFORM_ANDROID + BA_PLATFORM_LINUX) \
+#if (BA_PLATFORM_WINDOWS + BA_PLATFORM_MACOS + BA_PLATFORM_IOS              \
+     + BA_PLATFORM_TVOS + BA_PLATFORM_ANDROID + BA_PLATFORM_LINUX           \
+     + BA_PLATFORM_WEB)                                                     \
     != 1
 #error Zero or multiple BA_PLATFORM_* defines found.
 #endif
@@ -310,6 +316,7 @@ class BuildConfig {
   bool platform_ios_tvos() const { return EXPBOOL_(BA_PLATFORM_IOS_TVOS); }
   bool platform_android() const { return EXPBOOL_(BA_PLATFORM_ANDROID); }
   bool platform_linux() const { return EXPBOOL_(BA_PLATFORM_LINUX); }
+  bool platform_web() const { return EXPBOOL_(BA_PLATFORM_WEB); }
 
   const char* variant() const { return BA_VARIANT; }
 

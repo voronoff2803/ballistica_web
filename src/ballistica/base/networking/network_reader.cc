@@ -24,6 +24,10 @@ NetworkReader::NetworkReader() = default;
 
 void NetworkReader::SetPort(int port) {
   assert(g_core->InMainThread());
+#if BA_PLATFORM_WEB
+  // No networking threads on web/WASM.
+  return;
+#endif
   // Currently can't switch once this is set.
   if (port4_ != -1) {
     return;

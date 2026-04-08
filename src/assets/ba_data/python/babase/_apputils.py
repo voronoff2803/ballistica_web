@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import json
 import time
 import asyncio
@@ -395,6 +396,13 @@ class AppHealthSubsystem(AppSubsystem):
         self._running = True
         self._response = False
         self._first_check = True
+
+        if sys.platform == 'emscripten':
+            # No threads on WASM; skip health monitor.
+            self.stop_event = None
+            self.stopped_event = None
+            self._thread = None
+            return
 
         self.stop_event = threading.Event()
         self.stopped_event = threading.Event()

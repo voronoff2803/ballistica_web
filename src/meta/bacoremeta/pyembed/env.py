@@ -99,9 +99,49 @@ _g_warm_start_1_completed = False
 
 def warm_start_1() -> None:
     """Early import python bits we'll be using later."""
-    import threading
+    import sys
 
-    threading.Thread(target=_warm_start_imports).start()
+    if sys.platform == 'emscripten':
+        # WASM/Emscripten: no threads available; run imports synchronously
+        # and skip modules that are unavailable in WASM.
+        _warm_start_imports_wasm()
+    else:
+        import threading
+        threading.Thread(target=_warm_start_imports).start()
+
+
+def _warm_start_imports_wasm() -> None:
+    """Synchronous warm-start for WASM (no threading, skip unavailable)."""
+    # pylint: disable=unused-import
+    # pylint: disable=global-statement
+    import os
+    import zlib
+    import json
+    import time
+    import copy
+    import stat
+    import locale
+    import random
+    import string
+    import inspect
+    import logging
+    import weakref
+    import hashlib
+    import pathlib
+    import warnings
+    import textwrap
+    import datetime
+    import traceback
+    import functools
+    import encodings
+    import importlib
+    import contextlib
+    import dataclasses
+    import collections.abc
+    import asyncio
+
+    global _g_warm_start_1_completed
+    _g_warm_start_1_completed = True
 
 
 def _warm_start_imports() -> None:

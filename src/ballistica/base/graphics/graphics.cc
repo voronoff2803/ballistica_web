@@ -1084,6 +1084,18 @@ void Graphics::DrawFades(FrameDef* frame_def) {
 
   // Draw a fade if we're either in a fade or fading back in from a
   // progress-bar screen.
+#if BA_PLATFORM_WEB
+  // On web, complete fades instantly (timing issues cause stuck fades).
+  // But make sure endcall fires.
+  if (fade_ > 0.00001f || fade_out_) {
+    fade_ = 0;
+    fade_out_ = false;
+    if (fade_end_call_.exists()) {
+      fade_end_call_->Schedule();
+      fade_end_call_.Clear();
+    }
+  }
+#endif
   if (fade_ > 0.00001f || fade_out_
       || (frame_time - progress_bar_end_time_ < kProgressBarFadeTime)) {
     float a = fade_out_ ? 1 - fade_ : fade_;
@@ -1781,7 +1793,15 @@ void Graphics::set_client_context(Snapshot<GraphicsClientContext>* context) {
   UpdatePlaceholderSettings();
 
   // Let the logic system know its free to proceed beyond bootstrapping.
+#if BA_PLATFORM_WEB
+  // On web, defer this to next event loop tick to avoid running
+  // CompleteAppBootstrapping_ inside RunPendingRunnables_ context
+  // which can cause mutex deadlocks in single-threaded WASM.
+  g_base->logic->event_loop()->PushCall(
+      [] { g_base->logic->OnGraphicsReady(); });
+#else
   g_base->logic->OnGraphicsReady();
+#endif
 }
 
 // This call exists for the graphics-server to call when they've changed

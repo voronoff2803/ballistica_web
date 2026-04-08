@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import time
 import asyncio
 from enum import Enum
@@ -108,10 +109,34 @@ class App:
         #: processing. It should also be passed to any additional asyncio
         #: loops we create so that everything shares the same single set
         #: of worker threads.
-        self.threadpool: ThreadPoolExecutorEx = ThreadPoolExecutorEx(
-            thread_name_prefix='baworker',
-            initializer=self._thread_pool_thread_init,
-        )
+        if sys.platform == 'emscripten':
+            # No threads on WASM; use a deferred executor that pushes
+            # work back to the logic thread via _babase.pushcall.
+            from concurrent.futures import Executor
+
+            class _DeferredExecutor(Executor):
+                def submit(self, fn, /, *args, **kwargs):  # type: ignore
+                    from concurrent.futures import Future
+                    f: Future = Future()
+                    try:
+                        f.set_result(fn(*args, **kwargs))
+                    except Exception as e:
+                        f.set_exception(e)
+                    return f
+
+                def submit_no_wait(self, fn, *args, **kwargs):  # type: ignore
+                    """Run via pushcall to defer to next logic tick."""
+                    _babase.pushcall(
+                        lambda: fn(*args, **kwargs),
+                        from_other_thread=False,
+                    )
+
+            self.threadpool = _DeferredExecutor()  # type: ignore
+        else:
+            self.threadpool = ThreadPoolExecutorEx(
+                thread_name_prefix='baworker',
+                initializer=self._thread_pool_thread_init,
+            )
 
         #: Garbage collection related functionality.
         self.gc: GarbageCollectionSubsystem = self.register_subsystem(
@@ -261,7 +286,11 @@ class App:
         # disappear midway if the caller does not hold on to the
         # returned task, which seems like a great way to introduce
         # hard-to-track bugs.
-        task = self.asyncio_loop.create_task(coro, name=name)
+        loop = self._asyncio_loop
+        if loop is None:
+            # On web/WASM asyncio is not available; just skip.
+            return
+        task = loop.create_task(coro, name=name)
         self._asyncio_tasks.add(task)
         task.add_done_callback(self._on_task_done)
 
@@ -681,8 +710,8 @@ class App:
     def _set_intent(self, intent: AppIntent) -> None:
         from babase._appmode import AppMode
 
-        # This should be happening in a bg thread.
-        assert not _babase.in_logic_thread()
+        # This should be happening in a bg thread (except on web/WASM).
+        assert sys.platform == 'emscripten' or not _babase.in_logic_thread()
         try:
             # Ask the selector what app-mode to use for this intent.
             if self.mode_selector is None:
@@ -726,15 +755,17 @@ class App:
             mode = self._mode_instances.get(modetype)
             if mode is None:
                 self._mode_instances[modetype] = mode = modetype()
+            _from_other = sys.platform != 'emscripten'
             _babase.pushcall(
                 partial(self._apply_intent, intent, mode),
-                from_other_thread=True,
+                from_other_thread=_from_other,
             )
         except Exception:
             balog.exception('Error setting app intent to %s.', intent)
+            _from_other = sys.platform != 'emscripten'
             _babase.pushcall(
                 partial(self._display_set_intent_error, intent),
-                from_other_thread=True,
+                from_other_thread=_from_other,
             )
 
     def _apply_intent(self, intent: AppIntent, mode: AppMode) -> None:

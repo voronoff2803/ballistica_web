@@ -6,15 +6,17 @@ from __future__ import annotations
 
 import os
 import sys
-import ssl
 import time
-import signal
 import logging
 import warnings
-import threading
 from typing import TYPE_CHECKING, override
 
-import urllib3
+if sys.platform != 'emscripten':
+    import ssl
+    import signal
+    import threading
+    import urllib3
+
 from efro.logging import LogLevel
 
 if TYPE_CHECKING:
@@ -29,9 +31,10 @@ DEFAULT_REQUEST_TIMEOUT_SECONDS = 10
 
 _g_babase_imported: bool = False
 _g_babase_app_started: bool = False
-_g_net_warm_start_thread: threading.Thread | None = None
-_g_net_warm_start_ssl_context: ssl.SSLContext | None = None
-_g_net_warm_start_pool_manager: urllib3.PoolManager | None = None
+
+_g_net_warm_start_thread = None
+_g_net_warm_start_ssl_context = None
+_g_net_warm_start_pool_manager = None
 
 
 def on_native_module_import() -> None:
@@ -120,13 +123,13 @@ def on_main_thread_start_app() -> None:
             ' BEFORE importing any Ballistica modules.'
         )
 
-    # Set up interrupt-signal handling.
-
-    # Note: I've found we need to set up our C signal handling AFTER
-    # we've told Python to disable its own; otherwise (on Mac at least)
-    # it wipes out our existing C handler.
-    signal.signal(signal.SIGINT, signal.SIG_DFL)  # Do default handling.
-    _babase.setup_sigint()
+    # Set up interrupt-signal handling (not available on emscripten).
+    if sys.platform != 'emscripten':
+        # Note: I've found we need to set up our C signal handling AFTER
+        # we've told Python to disable its own; otherwise (on Mac at least)
+        # it wipes out our existing C handler.
+        signal.signal(signal.SIGINT, signal.SIG_DFL)  # Do default handling.
+        _babase.setup_sigint()
 
     # Turn on deprecation warnings. By default these are off for release
     # builds except for in __main__. However this is a key way to
@@ -164,12 +167,15 @@ def on_main_thread_start_app() -> None:
     # rest of our bootstrapping (as networking stuff is often an overall
     # bottleneck). Our net-subsystem then pulls this stuff into itself
     # when it comes up.
-    global _g_net_warm_start_thread  # pylint: disable=global-statement
-    _g_net_warm_start_thread = threading.Thread(target=_bootstrap_networking)
-    _g_net_warm_start_thread.start()
+    if sys.platform != 'emscripten':
+        global _g_net_warm_start_thread  # pylint: disable=global-statement
+        _g_net_warm_start_thread = threading.Thread(
+            target=_bootstrap_networking
+        )
+        _g_net_warm_start_thread.start()
 
-    # Kick off some background cache cleanup operations.
-    threading.Thread(target=_pycache_upkeep).start()
+        # Kick off some background cache cleanup operations.
+        threading.Thread(target=_pycache_upkeep).start()
 
 
 def _bootstrap_networking() -> None:

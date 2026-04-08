@@ -101,7 +101,13 @@ class RendererGL::FramebufferObjectGL : public Framebuffer {
       //   glTexImage2D(GL_TEXTURE_2D, 0, alpha_?GL_SRGB8_ALPHA8:GL_SRGB8,
       //   _width, _height, 0, alpha_?GL_RGBA:GL_RGB, format, nullptr);
       // } else {
-      glTexImage2D(GL_TEXTURE_2D, 0, alpha_ ? GL_RGBA : GL_RGB, width_, height_,
+      // WebGL2 requires sized internal formats for renderable textures.
+#if BA_PLATFORM_WEB
+      GLenum internal_fmt = alpha_ ? GL_RGBA8 : GL_RGB8;
+#else
+      GLenum internal_fmt = alpha_ ? GL_RGBA : GL_RGB;
+#endif
+      glTexImage2D(GL_TEXTURE_2D, 0, internal_fmt, width_, height_,
                    0, alpha_ ? GL_RGBA : GL_RGB, format, nullptr);
       // }
       glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,

@@ -508,8 +508,11 @@ def _setup_certs(contains_python_dist: bool) -> None:
     # system certs are working. We also allow forcing this via an env
     # var if the user desires.
     if (
-        contains_python_dist
-        or os.environ.get('BA_USE_BUNDLED_ROOT_CERTS') == '1'
+        sys.platform != 'emscripten'
+        and (
+            contains_python_dist
+            or os.environ.get('BA_USE_BUNDLED_ROOT_CERTS') == '1'
+        )
     ):
         import certifi
 

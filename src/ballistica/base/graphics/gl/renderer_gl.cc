@@ -135,7 +135,7 @@ auto RendererGL::GLErrorToString(GLenum err) -> std::string {
 static auto CheckGLExtension(const std::vector<std::string>& exts,
                              const char* ext) -> bool {
   assert(strlen(ext) < 100);
-  const int variant_count{11};
+  const int variant_count{12};
   char variants[variant_count][128];
   int i = 0;
   snprintf(variants[i], sizeof(variants[i]), "OES_%s", ext);
@@ -159,6 +159,8 @@ static auto CheckGLExtension(const std::vector<std::string>& exts,
   snprintf(variants[i], sizeof(variants[i]), "GL_IMG_%s", ext);
   i++;
   snprintf(variants[i], sizeof(variants[i]), "GL_ANGLE_%s", ext);
+  i++;
+  snprintf(variants[i], sizeof(variants[i]), "WEBGL_%s", ext);
   i++;
   assert(i == variant_count);
 
@@ -770,6 +772,11 @@ void RendererGL::PopGroupMarker() { BA_GL_POP_GROUP_MARKER(); }
 void RendererGL::InvalidateFramebuffer(bool color, bool depth,
                                        bool target_read_framebuffer) {
   BA_DEBUG_CHECK_GL_ERROR;
+
+#if BA_PLATFORM_WEB
+  // glInvalidateFramebuffer is problematic in WebGL — skip it.
+  return;
+#endif
 
   // Currently this is ES only for us.
 #if BA_OPENGL_IS_ES
@@ -2605,7 +2612,12 @@ void RendererGL::Load() {
     // Grab the current framebuffer and consider that to be our 'screen'
     // framebuffer. This can be 0 for the main framebuffer or can be
     // something else.
+#if BA_PLATFORM_WEB
+    // On web/WebGL the default canvas framebuffer is always 0.
+    screen_framebuffer_ = 0;
+#else
     screen_framebuffer_ = GLGetInt(GL_FRAMEBUFFER_BINDING);
+#endif
   }
   Renderer::Load();
   int high_qual_pp_flag =

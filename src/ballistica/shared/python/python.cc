@@ -89,8 +89,14 @@ const char* Python::ScopedCallLabel::current_label_ = nullptr;
 auto Python::HaveGIL() -> bool { return static_cast<bool>(PyGILState_Check()); }
 
 void Python::PermanentlyReleaseGIL() {
+#if BA_PLATFORM_WEB
+  // On web/WASM there's only one thread; releasing the GIL would break
+  // subsequent PyGILState_Ensure calls. Just keep it held.
+  return;
+#else
   assert(HaveGIL());
   PyEval_SaveThread();
+#endif
 }
 
 void Python::PrintStackTrace() {
@@ -456,16 +462,22 @@ void Python::MarkReachedEndOfModule(PyObject* module) {
 class Python::ScopedInterpreterLock::Impl {
  public:
   Impl() {
+#if !BA_PLATFORM_WEB
     // Grab the python GIL.
     gil_state_ = PyGILState_Ensure();
+#endif
   }
   ~Impl() {
+#if !BA_PLATFORM_WEB
     // Release the python GIL.
     PyGILState_Release(gil_state_);
+#endif
   }
 
  private:
+#if !BA_PLATFORM_WEB
   PyGILState_STATE gil_state_{PyGILState_UNLOCKED};
+#endif
 };
 
 Python::ScopedInterpreterLock::ScopedInterpreterLock()
@@ -476,22 +488,28 @@ Python::ScopedInterpreterLock::~ScopedInterpreterLock() { delete impl_; }
 class Python::ScopedInterpreterLockRelease::Impl {
  public:
   Impl() {
+#if !BA_PLATFORM_WEB
     had_gil_ = HaveGIL();
     if (had_gil_) {
       // Release the GIL.
       thread_state_ = PyEval_SaveThread();
     }
+#endif
   }
   ~Impl() {
+#if !BA_PLATFORM_WEB
     if (had_gil_) {
       // Restore the GIL.
       PyEval_RestoreThread(thread_state_);
     }
+#endif
   }
 
  private:
+#if !BA_PLATFORM_WEB
   bool had_gil_{};
   PyThreadState* thread_state_{};
+#endif
 };
 
 Python::ScopedInterpreterLockRelease::ScopedInterpreterLockRelease()

@@ -164,16 +164,41 @@ class LogHandler(logging.Handler):
         # it is up to the user to explicitly call shutdown() to get our
         # background thread to exit.
         self._thread_bootstrapped = False
-        self._thread = Thread(
-            target=self._log_thread_main, daemon=not strict_threads
-        )
-        self._thread.start()
 
-        # Spin until our thread is up and running; otherwise we could
-        # wind up trying to push stuff to our event loop before the loop
-        # exists.
-        while not self._thread_bootstrapped:
-            time.sleep(0.001)
+        if sys.platform == 'emscripten':
+            # On WASM, no threads or async event loops available.
+            # Use a shim that executes callbacks synchronously.
+            class _SyncEventLoopShim:
+                slow_callback_duration = 2.0
+                def call_soon_threadsafe(self, callback, *args):
+                    try:
+                        callback(*args)
+                    except Exception:
+                        pass
+                def create_task(self, coro, **kwargs):
+                    # Can't run async tasks; just close the coroutine.
+                    coro.close()
+                    return None
+                def set_exception_handler(self, handler):
+                    pass
+                def run_forever(self):
+                    pass
+                def stop(self):
+                    pass
+            self._event_loop = _SyncEventLoopShim()  # type: ignore
+            self._thread = None  # type: ignore
+            self._thread_bootstrapped = True
+        else:
+            self._thread = Thread(
+                target=self._log_thread_main, daemon=not strict_threads
+            )
+            self._thread.start()
+
+            # Spin until our thread is up and running; otherwise we could
+            # wind up trying to push stuff to our event loop before the loop
+            # exists.
+            while not self._thread_bootstrapped:
+                time.sleep(0.001)
 
     def add_callback(
         self, call: Callable[[LogEntry], None], feed_existing_logs: bool = False
@@ -340,6 +365,15 @@ class LogHandler(logging.Handler):
             starttime = time.monotonic()
 
         # Called by logging to send us records.
+
+        if sys.platform == 'emscripten':
+            # On WASM, no background thread or event loop. Write directly.
+            try:
+                msg = self.format(record)
+                print(msg, file=sys.stderr, flush=True)
+            except Exception:
+                self.handleError(record)
+            return
 
         # Forward to aux handler if present (does its own formatting).
         if self._aux_handler is not None:

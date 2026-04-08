@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import time
 import logging
 from pathlib import Path
@@ -88,7 +89,11 @@ class MetadataSubsystem:
             ]
         )
 
-        Thread(target=self._run_scan_in_bg).start()
+        if sys.platform == 'emscripten':
+            # No threads on WASM; run scan synchronously.
+            self._run_scan_in_bg()
+        else:
+            Thread(target=self._run_scan_in_bg).start()
 
     def start_extra_scan(self) -> None:
         """Proceed to the extra_scan_dirs portion of the scan.
@@ -99,7 +104,9 @@ class MetadataSubsystem:
 
         :meta private:
         """
-        assert self._scan is not None
+        if self._scan is None:
+            # On web, sync scan already completed and cleared _scan.
+            return
         self._scan.set_extras(self.extra_scan_dirs)
 
     def load_exported_classes[T](
@@ -194,7 +201,10 @@ class MetadataSubsystem:
 
         # Place results and tell the logic thread they're ready.
         self.scanresults = results
-        _babase.pushcall(self._handle_scan_results, from_other_thread=True)
+        _from_other = sys.platform != 'emscripten'
+        _babase.pushcall(
+            self._handle_scan_results, from_other_thread=_from_other
+        )
 
     def _handle_scan_results(self) -> None:
         """Called in the logic thread with results of a completed scan."""
@@ -276,6 +286,9 @@ class DirectoryScan:
         for pathlist in [self.base_paths, self.extra_paths]:
             # Spin and wait until extra paths are provided before doing them.
             if pathlist is self.extra_paths:
+                if sys.platform == 'emscripten':
+                    # On web, skip extra_paths scan (can't spin-wait).
+                    break
                 while not self.extra_paths_set:
                     time.sleep(0.001)
 

@@ -239,6 +239,11 @@ class IncrementalInitRunner_ {
           Python::ScopedInterpreterLock gil_acquire;
           core_->python->WarmStart1();
 
+#if BA_PLATFORM_WEB
+          // On WASM without pthreads, warm_start runs synchronously
+          // so it's already completed. Skip the background thread.
+          warm_start_completed_ = true;
+#else
           // Launch a thread which spins and waits for the Python bg stuff
           // we just launched to complete. We do this in a separate thread
           // because even acquiring the GIL to make the check in the main
@@ -255,6 +260,7 @@ class IncrementalInitRunner_ {
               std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
           });
+#endif
 
           LogStepTime_(step_);
           step_++;
@@ -262,6 +268,12 @@ class IncrementalInitRunner_ {
         }
 
         case 2: {
+#if BA_PLATFORM_WEB
+          // On WASM, warm start already completed synchronously.
+          LogStepTime_(step_);
+          step_++;
+          return false;
+#else
           // This step is a special case; the previous step kicked off a
           // bunch of background work and in this step we simply poll for it
           // to finish, returning periodically to avoid ANRs. Note that we
@@ -287,6 +299,7 @@ class IncrementalInitRunner_ {
             // so they get most of the cpu.
             core::Platform::SleepMillisecs(1);
           }
+#endif
         }
 
         case 3: {

@@ -46,6 +46,11 @@
 // clang-format on
 #endif
 
+// On Web (Emscripten), use GLES3 headers (WebGL2).
+#if BA_PLATFORM_WEB
+#include <GLES3/gl3.h>
+#endif
+
 // On Windows with ANGLE we include GLES3 headers here (via gl_sys_windows.h)
 // so that glDepthRangef and other ES functions are visible before we define
 // any inline wrappers below.

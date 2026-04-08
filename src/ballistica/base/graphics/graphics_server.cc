@@ -151,20 +151,43 @@ auto GraphicsServer::TryRender() -> bool {
 
 auto GraphicsServer::WaitForRenderFrameDef_() -> FrameDef* {
   BA_PRECONDITION_LOG_ONCE(g_base->app_adapter->InGraphicsContext());
-  millisecs_t start_time = g_core->AppTimeMillisecs();
 
-  // Spin and wait for a short bit for a frame_def to appear.
+  // Stop waiting if we can't/shouldn't render anyway.
+  if (!renderer_ || !renderer_loaded_ || shutting_down_
+      || g_base->app_suspended()) {
+    return nullptr;
+  }
+
+  // Do a bit of incremental loading.
+  g_base->assets->RunPendingGraphicsLoads();
+
+  FrameDef* frame_def{};
+  {
+    std::scoped_lock llock(frame_def_mutex_);
+    if (frame_def_) {
+      frame_def = frame_def_;
+      frame_def_ = nullptr;
+    }
+  }
+  if (frame_def) {
+#if !BA_PLATFORM_WEB
+    // On native, ask the logic thread to start working on the next frame.
+    // On web, we call Draw() directly from the main loop.
+    g_base->logic->event_loop()->PushCall([] { g_base->logic->Draw(); });
+#endif
+    return frame_def;
+  }
+
+#if !BA_PLATFORM_WEB
+  // On native platforms, spin-wait for the frame_def.
+  millisecs_t start_time = g_core->AppTimeMillisecs();
   while (true) {
-    // Stop waiting if we can't/shouldn't render anyway.
     if (!renderer_ || !renderer_loaded_ || shutting_down_
         || g_base->app_suspended()) {
       return nullptr;
     }
-
-    // Do a bit of incremental loading every time through.
     g_base->assets->RunPendingGraphicsLoads();
 
-    FrameDef* frame_def{};
     {
       std::scoped_lock llock(frame_def_mutex_);
       if (frame_def_) {
@@ -173,14 +196,10 @@ auto GraphicsServer::WaitForRenderFrameDef_() -> FrameDef* {
       }
     }
     if (frame_def) {
-      // As soon as we start working on rendering a frame, ask the logic
-      // thread to start working on the next one for us. Keeps things nice
-      // and pipelined.
       g_base->logic->event_loop()->PushCall([] { g_base->logic->Draw(); });
       return frame_def;
     }
 
-    // If there's no frame_def for us, sleep for a bit and wait for it.
     millisecs_t t = g_core->AppTimeMillisecs() - start_time;
     if (t >= 1000) {
       if (g_buildconfig.debug_build()) {
@@ -189,10 +208,12 @@ auto GraphicsServer::WaitForRenderFrameDef_() -> FrameDef* {
             "GraphicsServer: timed out at " + std::to_string(t)
                 + "ms waiting for logic thread to send us a FrameDef.");
       }
-      break;  // Fail.
+      break;
     }
     core::Platform::SleepMillisecs(1);
   }
+#endif  // !BA_PLATFORM_WEB
+
   return nullptr;
 }
 

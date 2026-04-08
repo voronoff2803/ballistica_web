@@ -95,6 +95,7 @@ class AppArchitecture(Enum):
     ARM64 = 'arm64'
     X86 = 'x86'
     X86_64 = 'x86_64'
+    WASM32 = 'wasm32'
 
 
 class AppPlatform(Enum):
@@ -113,6 +114,7 @@ class AppPlatform(Enum):
     ANDROID = 'android'
     IOS = 'ios'
     TVOS = 'tvos'
+    WEB = 'web'
 
 
 class AppVariant(Enum):

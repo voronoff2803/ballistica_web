@@ -508,6 +508,8 @@ set(BALLISTICA_SOURCES
   ${BA_SRC_ROOT}/ballistica/core/platform/platform.h
   ${BA_SRC_ROOT}/ballistica/core/platform/support/min_sdl.h
   ${BA_SRC_ROOT}/ballistica/core/platform/support/platform_pango.h
+  ${BA_SRC_ROOT}/ballistica/core/platform/web/platform_web.cc
+  ${BA_SRC_ROOT}/ballistica/core/platform/web/platform_web.h
   ${BA_SRC_ROOT}/ballistica/core/platform/windows/platform_windows.cc
   ${BA_SRC_ROOT}/ballistica/core/platform/windows/platform_windows.h
   ${BA_SRC_ROOT}/ballistica/core/python/core_python.cc

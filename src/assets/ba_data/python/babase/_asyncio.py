@@ -29,14 +29,20 @@ _g_asyncio_event_loop: asyncio.AbstractEventLoop | None = None
 DEBUG_TIMING = os.environ.get('BA_DEBUG_TIMING') == '1'
 
 
-def setup_asyncio() -> asyncio.AbstractEventLoop:
+def setup_asyncio() -> asyncio.AbstractEventLoop | None:
     """Setup asyncio functionality for the logic thread."""
     # pylint: disable=global-statement
+    import sys
 
     import _babase
     import babase
 
     assert _babase.in_logic_thread()
+
+    if sys.platform == 'emscripten':
+        # asyncio event loops require sockets which aren't available
+        # on emscripten/WASM. Return None; callers should handle this.
+        return None  # type: ignore
 
     # Create our event-loop. We don't expect there to be one
     # running on this thread before we do.

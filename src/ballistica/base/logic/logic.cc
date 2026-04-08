@@ -106,10 +106,13 @@ void Logic::OnGraphicsReady() {
         kHeadlessMinDisplayTimeStep, true,
         NewLambdaRunnable([this] { StepDisplayTime_(); }).get());
   } else {
+#if !BA_PLATFORM_WEB
     // In gui mode, push an initial frame to the graphics server. From this
     // point it will be self-sustaining, sending us a frame request each
     // time it receives a new frame from us.
     g_base->graphics->BuildAndPushFrameDef();
+#endif
+    // On web, Draw() is called from the main loop.
   }
 }
 

@@ -87,6 +87,12 @@
 #elif BA_PLATFORM_LINUX
 #include "ballistica/core/platform/linux/platform_linux.h"
 #define BA_PLATFORM_CLASS PlatformLinux
+
+// Web (Emscripten/WASM) -------------------------------------------------------
+
+#elif BA_PLATFORM_WEB
+#include "ballistica/core/platform/web/platform_web.h"
+#define BA_PLATFORM_CLASS PlatformWeb
 #else
 
 // Generic ---------------------------------------------------------------------
@@ -881,6 +887,10 @@ auto Platform::MacMusicAppGetPlaylists() -> std::list<std::string> {
 }
 
 void Platform::SetCurrentThreadName(const std::string& name) {
+#if BA_PLATFORM_WEB
+  // On web/WASM everything runs on the main thread; nothing to do.
+  return;
+#else
   // We should never be doing this for the main thread.
   BA_PRECONDITION_FATAL(!g_core->InMainThread());
 
@@ -889,6 +899,7 @@ void Platform::SetCurrentThreadName(const std::string& name) {
 #elif BA_PLATFORM_LINUX || BA_PLATFORM_ANDROID
   pthread_setname_np(pthread_self(), name.c_str());
 #endif
+#endif  // BA_PLATFORM_WEB
 }
 
 void Platform::Unlink(const char* path) {

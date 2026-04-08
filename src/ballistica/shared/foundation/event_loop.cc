@@ -32,6 +32,13 @@ using core::g_core;
 
 EventLoop::EventLoop(EventLoopID identifier_in, ThreadSource source)
     : source_(source), identifier_(identifier_in) {
+#if BA_PLATFORM_WEB
+  // On WASM without pthreads, we can't create real threads.
+  // All event loops wrap the current (main) thread and get ticked
+  // cooperatively from the main loop.
+  source_ = ThreadSource::kWrapCurrent;
+  BootstrapThread_();
+#else
   switch (source_) {
     case ThreadSource::kCreate: {
       // IMPORTANT: We grab this lock *before* kicking off our thread, and
@@ -110,6 +117,7 @@ EventLoop::EventLoop(EventLoopID identifier_in, ThreadSource source)
       break;
     }
   }
+#endif  // !BA_PLATFORM_WEB
 }
 
 // These are all exactly the same; its just a way to try and clarify
@@ -248,7 +256,39 @@ void EventLoop::WaitForNextEvent_(bool single_cycle) {
 }
 
 void EventLoop::RunToCompletion() { Run_(false); }
-void EventLoop::RunSingleCycle() { Run_(true); }
+void EventLoop::RunSingleCycle() {
+#if BA_PLATFORM_WEB
+  // On web, don't wait — just process what's ready now.
+  // WaitForNextEvent_ with single_cycle already returns immediately.
+  // But some runnables/timers can block, so we need to be careful.
+
+  // Process thread messages.
+  std::list<ThreadMessage_> thread_messages;
+  GetThreadMessages_(&thread_messages);
+  for (auto& thread_message : thread_messages) {
+    switch (thread_message.type) {
+      case ThreadMessage_::Type::kRunnable: {
+        PushLocalRunnable_(thread_message.runnable,
+                           thread_message.completion_flag);
+        break;
+      }
+      case ThreadMessage_::Type::kShutdown: {
+        done_ = true;
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  if (!suspended_) {
+    timers_.Run(g_core->AppTimeMicrosecs());
+    RunPendingRunnables_();
+  }
+#else
+  Run_(true);
+#endif
+}
 
 void EventLoop::Run_(bool single_cycle) {
   assert(g_core);
@@ -703,9 +743,17 @@ void EventLoop::PushRunnableSynchronous(Runnable* runnable) {
   std::unique_lock lock(client_listener_mutex_);
 
   if (std::this_thread::get_id() == thread_id()) {
+#if BA_PLATFORM_WEB
+    // On web/WASM all event-loops share the main thread.
+    // Just run the runnable directly instead of deadlocking.
+    runnable->RunAndLogErrors();
+    delete runnable;
+    return;
+#else
     FatalError(
         "PushRunnableSynchronous called from target thread;"
         " would deadlock.");
+#endif
   } else {
     PushCrossThreadRunnable_(runnable, &complete);
   }

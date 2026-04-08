@@ -5,6 +5,9 @@
 #if BA_PLATFORM_ANDROID
 #include "ballistica/base/app_adapter/app_adapter_android.h"
 #endif
+#if BA_PLATFORM_WEB
+#include "app_adapter_web.h"
+#endif
 #include "ballistica/base/app_adapter/app_adapter_apple.h"  // IWYU pragma: keep.
 #include "ballistica/base/app_adapter/app_adapter_headless.h"  // IWYU pragma: keep.
 #include "ballistica/base/app_adapter/app_adapter_sdl.h"
@@ -58,6 +61,11 @@
 #elif BA_PLATFORM_LINUX
 #include "ballistica/base/app_platform/linux/app_platform_linux.h"
 #define BA_APP_PLATFORM_CLASS AppPlatformLinux
+
+#elif BA_PLATFORM_WEB
+#include "ballistica/base/app_platform/app_platform.h"
+#define BA_APP_PLATFORM_CLASS AppPlatform
+
 #else
 
 // Generic ---------------------------------------------------------------------
@@ -96,6 +104,8 @@ auto BaseBuildSwitches::CreateAppAdapter() -> AppAdapter* {
 
 #if BA_HEADLESS_BUILD
   app_adapter = new AppAdapterHeadless();
+#elif BA_PLATFORM_WEB
+  app_adapter = new AppAdapterWeb();
 #elif BA_PLATFORM_ANDROID
   app_adapter = new AppAdapterAndroid();
 #elif BA_XCODE_BUILD

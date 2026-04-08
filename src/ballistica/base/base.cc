@@ -108,19 +108,10 @@ void BaseFeatureSet::OnModuleExec(PyObject* module) {
   // we're now present.
   core::g_base_soft = g_base;
 
-  // Define our native Python classes.
-  //
-  // NOTE: Normally we'd define our classes *after* we import stuff (like a
-  // regular Python module generally would) but we need FeatureSetData to
-  // exist *before* we call StoreOnPythonModule, so we have to do this
-  // early.
   g_base->python->AddPythonClasses(module);
 
-  // Store our C++ front-end with our Python module. This is what allows
-  // other C++ code to 'import' our C++ front end and talk to us directly.
   g_base->StoreOnPythonModule(module);
 
-  // Import all the Python stuff we use.
   g_base->python->ImportPythonObjs();
 
   // Run some sanity checks, wire up our log handler, etc.

@@ -4,10 +4,13 @@
 
 from __future__ import annotations
 
-import socket
-import threading
+import sys
 import ipaddress
 from typing import TYPE_CHECKING
+
+if sys.platform != 'emscripten':
+    import socket
+    import threading
 
 if TYPE_CHECKING:
     pass
@@ -19,21 +22,24 @@ class NetworkSubsystem:
     def __init__(self) -> None:
         import babase._env
 
-        assert babase._env._g_net_warm_start_thread is not None
-        babase._env._g_net_warm_start_thread.join()
-        babase._env._g_net_warm_start_thread = None
+        if sys.platform != 'emscripten':
+            assert babase._env._g_net_warm_start_thread is not None
+            babase._env._g_net_warm_start_thread.join()
+            babase._env._g_net_warm_start_thread = None
 
-        assert babase._env._g_net_warm_start_ssl_context is not None
-        self.sslcontext = babase._env._g_net_warm_start_ssl_context
-        babase._env._g_net_warm_start_ssl_context = None
+            assert babase._env._g_net_warm_start_ssl_context is not None
+            self.sslcontext = babase._env._g_net_warm_start_ssl_context
+            babase._env._g_net_warm_start_ssl_context = None
 
-        assert babase._env._g_net_warm_start_pool_manager is not None
-        self.urllib3pool = babase._env._g_net_warm_start_pool_manager
-        babase._env._g_net_warm_start_pool_manager = None
+            assert babase._env._g_net_warm_start_pool_manager is not None
+            self.urllib3pool = babase._env._g_net_warm_start_pool_manager
+            babase._env._g_net_warm_start_pool_manager = None
 
-        # Anyone accessing/modifying zone_pings should hold this lock,
-        # as it is updated by a background thread.
-        self.zone_pings_lock = threading.Lock()
+            self.zone_pings_lock = threading.Lock()
+        else:
+            self.sslcontext = None
+            self.urllib3pool = None
+            self.zone_pings_lock = None
 
         # Zone IDs mapped to average pings. This will remain empty
         # until enough pings have been run to be reasonably certain
