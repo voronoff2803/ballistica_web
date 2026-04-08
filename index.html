@@ -1,105 +1,96 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>BombSquad Web</title>
-  <style>
-    * { margin: 0; padding: 0; }
-    body { background: #111; overflow: hidden; font-family: sans-serif; }
-    #canvas { display: block; width: 100vw; height: 100vh; }
-    #loading {
-      position: fixed; inset: 0;
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      background: #111; color: #fff; z-index: 100;
-    }
-    #loading h1 { font-size: 2em; margin-bottom: 20px; }
-    #progress-bar { width: 300px; height: 20px; background: #333; border-radius: 10px; overflow: hidden; }
-    #progress-fill { height: 100%; width: 0%; background: #4a9; transition: width 0.3s; }
-    #progress-text { margin-top: 10px; color: #888; font-size: 14px; }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+
+  #loading-overlay {
+    position: fixed; inset: 0; z-index: 100;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: #1a1a2e;
+    transition: opacity 0.6s ease;
+  }
+  #loading-overlay.hidden { opacity: 0; pointer-events: none; }
+
+  #bomb-spinner { width: 96px; height: 96px; }
+
+  #progress-wrap {
+    margin-top: 24px; width: 200px; height: 4px;
+    background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden;
+  }
+  #progress-bar {
+    height: 100%; width: 0%;
+    background: rgba(255,255,255,0.35); border-radius: 2px;
+    transition: width 0.3s ease;
+  }
+
+  #status {
+    margin-top: 12px;
+    font: 12px/1 -apple-system, sans-serif;
+    color: rgba(255,255,255,0.25); letter-spacing: 0.5px;
+  }
+
+  canvas.emscripten {
+    display: block; width: 100%; height: 100%;
+    background: #000; border: 0; outline: 0;
+  }
+  #output { display: none; }
+</style>
 </head>
 <body>
-  <div id="loading">
-    <h1>BombSquad</h1>
-    <div id="progress-bar"><div id="progress-fill"></div></div>
-    <div id="progress-text">Loading...</div>
-  </div>
-  <canvas id="canvas" tabindex="-1"></canvas>
-  <script>
-    var pf = document.getElementById('progress-fill');
-    var pt = document.getElementById('progress-text');
-    var ld = document.getElementById('loading');
 
-    var PARTS = ['BallisticaKit.data.part.aa','BallisticaKit.data.part.ab',
-      'BallisticaKit.data.part.ac','BallisticaKit.data.part.ad',
-      'BallisticaKit.data.part.ae','BallisticaKit.data.part.af',
-      'BallisticaKit.data.part.ag'];
-    var TOTAL = 260371936;
+<div id="loading-overlay">
+  <img id="bomb-spinner" src="spinner0_preview.png" alt="">
+  <div id="progress-wrap"><div id="progress-bar"></div></div>
+  <div id="status">Loading...</div>
+</div>
 
-    async function loadData() {
-      var chunks = [], loaded = 0;
-      for (var i = 0; i < PARTS.length; i++) {
-        pt.textContent = 'Downloading (' + (i+1) + '/' + PARTS.length + ')...';
-        var resp = await fetch(PARTS[i]);
-        var reader = resp.body.getReader();
-        var pc = [];
-        while (true) {
-          var r = await reader.read();
-          if (r.done) break;
-          pc.push(r.value); loaded += r.value.length;
-          pf.style.width = (loaded / TOTAL * 90).toFixed(0) + '%';
-        }
-        var sz = pc.reduce(function(a,c){return a+c.length;},0);
-        var buf = new Uint8Array(sz); var off = 0;
-        for (var c of pc) { buf.set(c, off); off += c.length; }
-        chunks.push(buf);
-      }
-      var full = new Uint8Array(loaded); var o = 0;
-      for (var ch of chunks) { full.set(ch, o); o += ch.length; }
-      return full.buffer;
-    }
+<canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+<textarea id="output" rows="1"></textarea>
 
-    async function start() {
-      var dataBuffer = await loadData();
-      pt.textContent = 'Starting engine...'; pf.style.width = '95%';
+<script>
+(function() {
+  var img = document.getElementById('bomb-spinner');
+  var frames = [];
+  for (var i = 0; i < 12; i++) frames.push('spinner' + i + '_preview.png');
+  frames.forEach(function(s) { var p = new Image(); p.src = s; });
+  var idx = 0;
+  setInterval(function() { idx = (idx + 1) % 12; img.src = frames[idx]; }, 80);
+})();
 
-      window.Module = {
-        canvas: document.getElementById('canvas'),
-        locateFile: function(p) { return p; },
-        getPreloadedPackage: function() { return dataBuffer; },
-        print: function(t) {
-          if (t.indexOf('chaos')===-1 && t.indexOf('trailing_dist')===-1) console.log(t);
-        },
-        printErr: function(t) {
-          if (t.indexOf('chaos')===-1 && t.indexOf('trailing_dist')===-1
-              && t.indexOf('preloading')===-1 && t.indexOf('ConvertToUncompressed')===-1
-              && t.indexOf('loading texture')===-1 && t.indexOf('allocating mesh')===-1)
-            console.warn(t);
-        },
-        onRuntimeInitialized: function() {
-          pf.style.width = '100%'; pt.textContent = 'Ready!';
-          setTimeout(function(){ ld.style.display = 'none'; }, 500);
-        }
-      };
+var canvasElement = document.getElementById('canvas');
+var statusElement = document.getElementById('status');
+var progressBar = document.getElementById('progress-bar');
+var overlay = document.getElementById('loading-overlay');
 
-      var c = document.getElementById('canvas');
-      c.width = window.innerWidth; c.height = window.innerHeight;
-      window.addEventListener('resize', function() {
-        c.width = window.innerWidth; c.height = window.innerHeight;
-      });
-      window.addEventListener('beforeunload', function() {
-        if (typeof FS !== 'undefined') FS.syncfs(false, function(){});
-      });
-      document.addEventListener('visibilitychange', function() {
-        if (document.hidden && typeof FS !== 'undefined') FS.syncfs(false, function(){});
-      });
+canvasElement.addEventListener('webglcontextlost', function(e) {
+  alert('WebGL context lost. Reload the page.'); e.preventDefault();
+}, false);
 
-      var s = document.createElement('script');
-      s.src = 'BallisticaKit.js'; document.body.appendChild(s);
-    }
-    start();
-  </script>
+var setStatus = function(text) {
+  if (!text) { overlay.classList.add('hidden'); return; }
+  statusElement.textContent = text;
+  var m = text.match(/\((\d+(\.\d+)?)\/(\d+)\)/);
+  if (m) progressBar.style.width = (parseFloat(m[1]) / parseFloat(m[3]) * 100) + '%';
+};
+
+var Module = {
+  print: function() { console.log(Array.prototype.slice.call(arguments).join(' ')); },
+  canvas: canvasElement,
+  setStatus: setStatus,
+  totalDependencies: 0,
+  monitorRunDependencies: function(left) {
+    this.totalDependencies = Math.max(this.totalDependencies, left);
+    setStatus(left ? 'Loading... (' + (this.totalDependencies - left) + '/' + this.totalDependencies + ')' : '');
+  }
+};
+setStatus('Loading...');
+window.onerror = function(msg) { setStatus('Error'); console.error(msg); };
+</script>
+<script async src="BallisticaKit.js"></script>
 </body>
 </html>
