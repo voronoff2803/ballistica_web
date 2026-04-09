@@ -219,11 +219,13 @@ class AdvancedSettingsWindow(bui.MainWindow):
         )
 
         # Fetch the list of completed languages.
-        bui.app.classic.master_server_v1_get(
-            'bsLangGetCompleted',
-            {'b': app.env.engine_build_number},
-            callback=bui.WeakCallPartial(self._completed_langs_cb),
-        )
+        import sys
+        if sys.platform != 'emscripten':
+            bui.app.classic.master_server_v1_get(
+                'bsLangGetCompleted',
+                {'b': app.env.engine_build_number},
+                callback=bui.WeakCallPartial(self._completed_langs_cb),
+            )
 
     @override
     def get_main_window_state(self) -> bui.MainWindowState:
