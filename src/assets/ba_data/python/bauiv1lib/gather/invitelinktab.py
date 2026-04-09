@@ -323,17 +323,17 @@ class InviteLinkGatherTab:
                 color=(0.3, 0.8, 1.0),
                 scale=1.3,
             )
-        # Build invite link and copy to clipboard.
+        # Show invite link in a prompt so user can copy it.
         invite_url = _js_val(
             'window.location.origin + window.location.pathname'
             ' + "?join=' + code + '"'
         )
         _js(
-            'navigator.clipboard.writeText("' + invite_url + '")'
-            '.catch(function(){});'
+            'prompt("Share this link with a friend:", "'
+            + invite_url + '");'
         )
         bui.screenmessage(
-            bui.Lstr(value='Invite link copied to clipboard!'),
+            bui.Lstr(value='Share the link with a friend!'),
             color=(0, 1, 0),
         )
 
