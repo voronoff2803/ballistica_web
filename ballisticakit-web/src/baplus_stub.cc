@@ -260,8 +260,30 @@ except Exception as e:
   Py_RETURN_NONE;
 }
 
+// --- JavaScript bridge ---
+extern "C" {
+  extern void web_js_run(const char* code);
+  extern const char* web_js_eval(const char* code);
+}
+
+static PyObject* py_web_js_run(PyObject*, PyObject* args) {
+  const char* code;
+  if (!PyArg_ParseTuple(args, "s", &code)) return nullptr;
+  web_js_run(code);
+  Py_RETURN_NONE;
+}
+
+static PyObject* py_web_js_eval(PyObject*, PyObject* args) {
+  const char* code;
+  if (!PyArg_ParseTuple(args, "s", &code)) return nullptr;
+  const char* result = web_js_eval(code);
+  return PyUnicode_FromString(result ? result : "");
+}
+
 // --- Method table ---
 static PyMethodDef baplus_methods[] = {
+    {"web_js_run", py_web_js_run, METH_VARARGS, nullptr},
+    {"web_js_eval", py_web_js_eval, METH_VARARGS, nullptr},
     {"on_app_loading", on_app_loading, METH_VARARGS, nullptr},
     {"get_v1_account_display_string", get_v1_account_display_string, METH_VARARGS, nullptr},
     {"get_v1_account_name", get_v1_account_name, METH_VARARGS, nullptr},

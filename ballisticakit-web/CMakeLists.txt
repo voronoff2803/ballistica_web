@@ -144,6 +144,7 @@ target_link_options(${PROJECT_NAME} PRIVATE
     -sFULL_ES3=1
     -O2
     "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap']"
+    "-sEXPORTED_FUNCTIONS=['_main','_malloc','_free','_web_net_incoming','_web_on_idbfs_ready','_web_gamepad_connect','_web_gamepad_disconnect','_web_gamepad_button','_web_gamepad_axis','_web_set_qr_url','_web_get_gamepad_url','_web_js_eval','_web_js_run']"
     # Preload Python stdlib into virtual filesystem at ./pylib
     # (the engine looks for stdlib at <data_dir>/pylib).
     "--preload-file=${PYTHON_STDLIB_DIR}@/pylib"

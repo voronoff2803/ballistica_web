@@ -25,6 +25,8 @@
 #include "ballistica/shared/foundation/event_loop.h"
 #include "ballistica/shared/generic/utils.h"
 #include "ballistica/shared/math/vector3f.h"
+#include "ballistica/shared/networking/sockaddr.h"
+#include "ballistica/base/app_mode/app_mode.h"
 
 #include "ballistica/core/platform/support/min_sdl.h"
 
@@ -328,7 +330,63 @@ EMSCRIPTEN_KEEPALIVE const char* web_get_gamepad_url() {
   return g_gamepad_url.c_str();
 }
 
+// Run JavaScript code and return string result.
+// Result is stored in a static buffer.
+static char g_js_result[4096];
+EMSCRIPTEN_KEEPALIVE const char* web_js_eval(const char* code) {
+  char* result = (char*)EM_ASM_PTR({
+    var code = UTF8ToString($0);
+    var result = "";
+    try { result = String(eval(code)); } catch(e) { result = ""; }
+    var len = lengthBytesUTF8(result) + 1;
+    var buf = _malloc(len);
+    stringToUTF8(result, buf, len);
+    return buf;
+  }, code);
+  if (result) {
+    strncpy(g_js_result, result, sizeof(g_js_result) - 1);
+    g_js_result[sizeof(g_js_result) - 1] = 0;
+    free(result);
+  } else {
+    g_js_result[0] = 0;
+  }
+  return g_js_result;
+}
+
+EMSCRIPTEN_KEEPALIVE void web_js_run(const char* code) {
+  EM_ASM({
+    var code = UTF8ToString($0);
+    try { eval(code); } catch(e) { console.warn('[js]', e); }
+  }, code);
+}
+
+// ---- WebSocket networking for multiplayer ----
+EMSCRIPTEN_KEEPALIVE void web_net_incoming(const uint8_t* data, int len) {
+  // Called from JS when a P2P/WebSocket message arrives.
+  // Route it into the engine as if it were a UDP packet.
+  using namespace ballistica::base;
+  if (!g_base || len <= 0) return;
+
+  std::vector<uint8_t> msg(data, data + len);
+  // Use a dummy loopback SockAddr so the engine can route responses.
+  ballistica::SockAddr addr("127.0.0.1", 43210);
+  g_base->logic->event_loop()->PushCall([msg, addr] {
+    g_base->app_mode()->HandleIncomingUDPPacket(msg, addr);
+  });
+}
+
 } // extern "C"
+
+// Called from C++ Networking::SendTo on web — forwards to JS P2P/WebSocket.
+extern "C" void ballistica_web_net_send(const uint8_t* data, int len) {
+  EM_ASM({
+    if (window._wsNetSend) {
+      // Copy from WASM heap inside EM_ASM where HEAPU8 is available.
+      var copy = HEAPU8.slice($0, $0 + $1);
+      window._wsNetSend(copy);
+    }
+  }, data, len);
+}
 
 // ---- Global state ----
 static bool g_engine_started = false;

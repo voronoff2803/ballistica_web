@@ -559,9 +559,11 @@ void ConnectionToClient::HandleMessagePacket(
             if (cJSON_IsNumber(b)) {
               build_number_ = b->valueint;
             } else {
+#if !BA_PLATFORM_WEB
               BA_LOG_ONCE(LogName::kBaNetworking, LogLevel::kWarning,
                           "No buildnumber in clientinfo msg.");
               Error("");
+#endif
             }
 
             // Grab their token (we use this to ask the server for their
@@ -570,9 +572,11 @@ void ConnectionToClient::HandleMessagePacket(
             if (cJSON_IsString(t)) {
               token_ = t->valuestring;
             } else {
+#if !BA_PLATFORM_WEB
               BA_LOG_ONCE(LogName::kBaNetworking, LogLevel::kWarning,
                           "No token in clientinfo msg.");
               Error("");
+#endif
             }
 
             // Newer clients also pass a peer-hash, which we can include

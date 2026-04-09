@@ -15,6 +15,10 @@ namespace ballistica::base {
 NetworkWriter::NetworkWriter() {}
 
 void NetworkWriter::OnMainThreadStartApp() {
+#if BA_PLATFORM_WEB
+  // No network-writer thread on web.
+  return;
+#endif
   // Spin up our thread.
   event_loop_ = new EventLoop(EventLoopID::kNetworkWrite);
   g_core->suspendable_event_loops.push_back(event_loop_);
@@ -22,6 +26,11 @@ void NetworkWriter::OnMainThreadStartApp() {
 
 void NetworkWriter::PushSendToCall(const std::vector<uint8_t>& msg,
                                    const SockAddr& addr) {
+#if BA_PLATFORM_WEB
+  // On web there's no network-writer thread; send directly.
+  Networking::SendTo(msg, addr);
+  return;
+#endif
   // These are unreliable sends so its ok to drop stuff instead of possibly
   // dying due to event loop hitting its limit.
   //

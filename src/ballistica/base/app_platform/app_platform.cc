@@ -8,6 +8,9 @@
 #include <string>
 
 #include "ballistica/core/logging/logging.h"
+#if BA_PLATFORM_WEB
+#include <emscripten.h>
+#endif
 #include "ballistica/shared/buildconfig/buildconfig_common.h"
 
 #if !BA_PLATFORM_WINDOWS
@@ -232,7 +235,11 @@ void AppPlatform::OnAppShutdownComplete() { assert(g_base->InLogicThread()); }
 void AppPlatform::OnScreenSizeChange() { assert(g_base->InLogicThread()); }
 void AppPlatform::ApplyAppConfig() { assert(g_base->InLogicThread()); }
 
+#if BA_PLATFORM_WEB
+auto AppPlatform::HaveStringEditor() -> bool { return true; }
+#else
 auto AppPlatform::HaveStringEditor() -> bool { return false; }
+#endif
 
 void AppPlatform::InvokeStringEditor(PyObject* string_edit_adapter) {
   BA_PRECONDITION(HaveStringEditor());
@@ -275,6 +282,31 @@ void AppPlatform::StringEditorCancel() {
 void AppPlatform::DoInvokeStringEditor(const std::string& title,
                                        const std::string& value,
                                        std::optional<int> max_chars) {
+#if BA_PLATFORM_WEB
+  // Use browser prompt() for text input on web.
+  char* result = (char*)EM_ASM_PTR({
+    var title = UTF8ToString($0);
+    var initial = UTF8ToString($1);
+    var r = prompt(title, initial);
+    if (r === null) r = "%%CANCEL%%";  // sentinel for cancel
+    var len = lengthBytesUTF8(r) + 1;
+    var buf = _malloc(len);
+    stringToUTF8(r, buf, len);
+    return buf;
+  }, title.c_str(), value.c_str());
+  if (result) {
+    std::string s(result);
+    free(result);
+    if (s == "%%CANCEL%%") {
+      StringEditorCancel();
+    } else {
+      StringEditorApply(s);
+    }
+  } else {
+    StringEditorCancel();
+  }
+  return;
+#endif
   g_core->logging->Log(LogName::kBa, LogLevel::kError,
                        "FIXME: DoInvokeStringEditor() unimplemented");
 }

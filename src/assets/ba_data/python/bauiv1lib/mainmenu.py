@@ -545,6 +545,17 @@ class MainMenuWindow(bui.MainWindow):
                 size=qr_size,
             )
 
+        # Auto-open Gather window if ?join= parameter is in URL.
+        if is_web():
+            import _baplus
+            auto_code = _baplus.web_js_eval(
+                'window._autoJoinCode || ""'
+            )
+            if auto_code:
+                bui.apptimer(0.3, bui.WeakCallStrict(
+                    self._gather_press
+                ))
+
     def _quit(self) -> None:
         # pylint: disable=cyclic-import
         from bauiv1lib.confirm import QuitWindow

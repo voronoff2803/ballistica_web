@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import sys
 import weakref
 import logging
 from enum import Enum
@@ -68,6 +69,7 @@ class GatherWindow(bui.MainWindow):
         PRIVATE = 'private'
         NEARBY = 'nearby'
         MANUAL = 'manual'
+        INVITE_LINK = 'invite_link'
 
     def __init__(
         self,
@@ -180,25 +182,45 @@ class GatherWindow(bui.MainWindow):
         )
 
         # Build up the set of tabs we want.
-        tabdefs: list[tuple[GatherWindow.TabID, bui.Lstr]] = [
-            (self.TabID.ABOUT, bui.Lstr(resource=f'{self._r}.aboutText'))
-        ]
-        if plus.get_v1_account_misc_read_val('enablePublicParties', True):
+        import sys
+        if sys.platform == 'emscripten':
+            # Web build: single invite-link tab for P2P multiplayer.
+            from bauiv1lib.gather.invitelinktab import InviteLinkGatherTab
+            tabdefs: list[tuple[GatherWindow.TabID, bui.Lstr]] = [
+                (
+                    self.TabID.INVITE_LINK,
+                    bui.Lstr(value='Invite Link'),
+                ),
+            ]
+        else:
+            tabdefs: list[tuple[GatherWindow.TabID, bui.Lstr]] = [
+                (self.TabID.ABOUT, bui.Lstr(resource=f'{self._r}.aboutText'))
+            ]
+            if plus.get_v1_account_misc_read_val('enablePublicParties', True):
+                tabdefs.append(
+                    (
+                        self.TabID.INTERNET,
+                        bui.Lstr(resource=f'{self._r}.publicText'),
+                    )
+                )
             tabdefs.append(
                 (
-                    self.TabID.INTERNET,
-                    bui.Lstr(resource=f'{self._r}.publicText'),
+                    self.TabID.PRIVATE,
+                    bui.Lstr(resource=f'{self._r}.privateText'),
                 )
             )
-        tabdefs.append(
-            (self.TabID.PRIVATE, bui.Lstr(resource=f'{self._r}.privateText'))
-        )
-        tabdefs.append(
-            (self.TabID.NEARBY, bui.Lstr(resource=f'{self._r}.nearbyText'))
-        )
-        tabdefs.append(
-            (self.TabID.MANUAL, bui.Lstr(resource=f'{self._r}.manualText'))
-        )
+            tabdefs.append(
+                (
+                    self.TabID.NEARBY,
+                    bui.Lstr(resource=f'{self._r}.nearbyText'),
+                )
+            )
+            tabdefs.append(
+                (
+                    self.TabID.MANUAL,
+                    bui.Lstr(resource=f'{self._r}.manualText'),
+                )
+            )
 
         tab_inset = 250.0 if uiscale is bui.UIScale.SMALL else 100.0
 
@@ -222,6 +244,8 @@ class GatherWindow(bui.MainWindow):
             self.TabID.INTERNET: PublicGatherTab,
             self.TabID.NEARBY: NearbyGatherTab,
         }
+        if sys.platform == 'emscripten':
+            tabtypes[self.TabID.INVITE_LINK] = InviteLinkGatherTab
         self._tabs: dict[GatherWindow.TabID, GatherTab] = {}
         for tab_id in self._tab_row.tabs:
             tabtype = tabtypes.get(tab_id)
@@ -346,7 +370,11 @@ class GatherWindow(bui.MainWindow):
             for tab in self._tabs.values():
                 tab.restore_state()
 
-            current_tab = self.TabID.ABOUT
+            current_tab = (
+                self.TabID.INVITE_LINK
+                if sys.platform == 'emscripten'
+                else self.TabID.ABOUT
+            )
             gather_tab_val = bui.app.config.get('Gather Tab')
             try:
                 stored_tab = self.TabID(gather_tab_val)

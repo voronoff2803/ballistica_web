@@ -38,11 +38,20 @@ void Networking::OnAppSuspend() {}
 
 void Networking::OnAppUnsuspend() {}
 
+#if BA_PLATFORM_WEB
+// Defined in web_main.cc — sends data via P2P/WebSocket.
+extern "C" void ballistica_web_net_send(const uint8_t* data, int len);
+#endif
+
 void Networking::SendTo(const std::vector<uint8_t>& buffer,
                         const SockAddr& addr) {
   assert(g_base->network_reader);
   assert(!buffer.empty());
 
+#if BA_PLATFORM_WEB
+  ballistica_web_net_send(buffer.data(),
+                          static_cast<int>(buffer.size()));
+#else
   // This needs to be locked during any sd changes/writes.
   std::scoped_lock lock(g_base->network_reader->sd_mutex());
 
@@ -55,6 +64,7 @@ void Networking::SendTo(const std::vector<uint8_t>& buffer,
            static_cast_check_fit<socket_send_length_t>(buffer.size()), 0,
            addr.AsSockAddr(), addr.GetSockAddrLen());
   }
+#endif
 }
 
 }  // namespace ballistica::base
