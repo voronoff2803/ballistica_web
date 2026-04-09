@@ -371,7 +371,7 @@
       peer.on('open', function() {
         showStatus('Connecting to game...');
         connection = peer.connect(peerId, {
-          reliable: true,
+          reliable: false,
           metadata: { name: 'Player' }
         });
         connection.on('open', function() {

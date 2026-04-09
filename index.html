@@ -76,7 +76,7 @@ var PARTS = [
   'BallisticaKit.data.part.ac','BallisticaKit.data.part.ad',
   'BallisticaKit.data.part.ae','BallisticaKit.data.part.af'
 ];
-var TOTAL_SIZE = 244972149;
+var TOTAL_SIZE = 244985952;
 
 async function loadDataParts() {
   var chunks = [], loaded = 0;
@@ -134,6 +134,15 @@ async function startGame() {
       setTimeout(function() {
         if (window._startGamepadHost) window._startGamepadHost();
       }, 2000);
+      // Prevent screen sleep via Wake Lock API.
+      if (navigator.wakeLock) {
+        navigator.wakeLock.request('screen').catch(function() {});
+        document.addEventListener('visibilitychange', function() {
+          if (!document.hidden && navigator.wakeLock) {
+            navigator.wakeLock.request('screen').catch(function() {});
+          }
+        });
+      }
     }
   };
 
@@ -243,6 +252,185 @@ startGame();
   // Start PeerJS host after engine runtime is ready.
   // We hook into the onRuntimeInitialized that's set in startGame() above.
   window._startGamepadHost = initPeerHost;
+})();
+
+// =====================================================
+// Hardware Gamepad Support (Browser Gamepad API)
+// =====================================================
+(function() {
+  var pads = {};  // gamepad index -> { slot, prevButtons, prevAxes }
+
+  window.addEventListener('gamepadconnected', function(e) {
+    if (!window.Module || !Module.ccall) return;
+    var gp = e.gamepad;
+    var name = gp.id.substring(0, 30) || ('Gamepad ' + gp.index);
+    var slot = Module.ccall('web_gamepad_connect', 'number', ['string'], [name]);
+    if (slot < 0) return;
+    pads[gp.index] = {
+      slot: slot,
+      prevButtons: new Array(gp.buttons.length).fill(0),
+      prevAxes: new Array(gp.axes.length).fill(0),
+    };
+    console.log('[gamepad] Hardware connected:', name, 'slot', slot);
+  });
+
+  window.addEventListener('gamepaddisconnected', function(e) {
+    var p = pads[e.gamepad.index];
+    if (!p) return;
+    Module.ccall('web_gamepad_disconnect', null, ['number'], [p.slot]);
+    delete pads[e.gamepad.index];
+    console.log('[gamepad] Hardware disconnected:', e.gamepad.id);
+  });
+
+  // Standard Gamepad button mapping -> engine button index.
+  // https://w3c.github.io/gamepad/#remapping
+  var BTN_MAP = {
+    0: 0,   // A/Cross -> Jump
+    1: 2,   // B/Circle -> Bomb
+    2: 1,   // X/Square -> Punch
+    3: 3,   // Y/Triangle -> Throw
+    8: 5,   // Back/Select -> Menu
+    9: 5,   // Start -> Menu
+    4: 64,  // LB -> Run
+    5: 64,  // RB -> Run
+  };
+
+  function pollGamepads() {
+    var gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+    for (var i = 0; i < gamepads.length; i++) {
+      var gp = gamepads[i];
+      if (!gp) continue;
+      var p = pads[gp.index];
+      if (!p) continue;
+
+      // Buttons.
+      for (var b = 0; b < gp.buttons.length; b++) {
+        var pressed = gp.buttons[b].pressed ? 1 : 0;
+        if (pressed !== p.prevButtons[b]) {
+          p.prevButtons[b] = pressed;
+          var mapped = BTN_MAP[b];
+          if (mapped !== undefined) {
+            Module.ccall('web_gamepad_button', null,
+              ['number','number','number'], [p.slot, mapped, pressed]);
+          }
+        }
+      }
+
+      // Axes (0=LStickX, 1=LStickY, typically).
+      for (var a = 0; a < Math.min(gp.axes.length, 2); a++) {
+        var val = gp.axes[a];
+        // Apply small deadzone.
+        if (Math.abs(val) < 0.08) val = 0;
+        if (Math.abs(val - p.prevAxes[a]) > 0.01) {
+          p.prevAxes[a] = val;
+          Module.ccall('web_gamepad_axis', null,
+            ['number','number','number'], [p.slot, a, val]);
+        }
+      }
+    }
+    requestAnimationFrame(pollGamepads);
+  }
+
+  // Start polling once engine is ready.
+  var origStart = window._startGamepadHost;
+  window._startGamepadHost = function() {
+    if (origStart) origStart();
+    requestAnimationFrame(pollGamepads);
+  };
+})();
+
+// =====================================================
+// P2P Network Bridge (WebRTC via PeerJS)
+// =====================================================
+(function() {
+  var gameConn = null;  // active DataChannel connection for game packets
+  var hostPeer = null;  // PeerJS instance when hosting
+
+  function feedPacket(data) {
+    if (!(data instanceof ArrayBuffer)) return;
+    var arr = new Uint8Array(data);
+    Module.ccall('web_net_incoming', null, ['array', 'number'], [arr, arr.length]);
+  }
+
+  // Called from EM_ASM with a Uint8Array copy of the packet data.
+  window._wsNetSend = function(data) {
+    if (!gameConn || !gameConn.open) return;
+    gameConn.send(data.buffer);
+  };
+
+  // Host: start accepting P2P game connections.
+  // Returns the invite code (PeerJS ID).
+  window.startP2PHost = function(callback) {
+    if (hostPeer) { hostPeer.destroy(); hostPeer = null; }
+
+    var id = 'bs' + Math.random().toString(36).substr(2, 8);
+    hostPeer = new Peer(id);
+
+    hostPeer.on('open', function(peerId) {
+      console.log('[p2p] Hosting as', peerId);
+      if (callback) callback(peerId);
+    });
+
+    hostPeer.on('connection', function(conn) {
+      console.log('[p2p] Client connecting:', conn.peer);
+      conn.on('open', function() {
+        console.log('[p2p] Client connected');
+        gameConn = conn;
+      });
+      conn.on('data', function(data) { feedPacket(data); });
+      conn.on('close', function() {
+        console.log('[p2p] Client disconnected');
+        if (gameConn === conn) gameConn = null;
+      });
+    });
+
+    hostPeer.on('error', function(err) {
+      console.warn('[p2p] Host error:', err);
+    });
+  };
+
+  // Client: connect to a host by invite code.
+  window.joinP2P = function(code, callback) {
+    if (gameConn) { gameConn.close(); gameConn = null; }
+
+    var peer = new Peer();
+    peer.on('open', function() {
+      console.log('[p2p] Joining', code);
+      var conn = peer.connect(code, { reliable: true, serialization: 'binary' });
+
+      conn.on('open', function() {
+        console.log('[p2p] Connected to host');
+        gameConn = conn;
+        if (callback) callback(true);
+      });
+      conn.on('data', function(data) { feedPacket(data); });
+      conn.on('close', function() {
+        console.log('[p2p] Disconnected from host');
+        gameConn = null;
+      });
+      conn.on('error', function(err) {
+        console.warn('[p2p] Connection error:', err);
+        if (callback) callback(false);
+      });
+    });
+    peer.on('error', function(err) {
+      console.warn('[p2p] Peer error:', err);
+      if (callback) callback(false);
+    });
+  };
+
+  window.disconnectP2P = function() {
+    if (gameConn) { gameConn.close(); gameConn = null; }
+    if (hostPeer) { hostPeer.destroy(); hostPeer = null; }
+  };
+
+  // Store join code from URL for Python to pick up.
+  var params = new URLSearchParams(window.location.search);
+  var joinCode = params.get('join');
+  if (joinCode) {
+    window._autoJoinCode = joinCode;
+    console.log('[p2p] Will auto-join:', joinCode);
+  }
 })();
 </script>
 </body>
