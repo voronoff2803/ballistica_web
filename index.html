@@ -38,6 +38,7 @@
     display: block; width: 100%; height: 100%;
     background: #000; border: 0; outline: 0;
   }
+
 </style>
 </head>
 <body>
@@ -50,14 +51,15 @@
 
 <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
 
+
 <script>
-(function() {
+var _spinnerInterval = (function() {
   var img = document.getElementById('bomb-spinner');
   var frames = [];
   for (var i = 0; i < 12; i++) frames.push('spinner' + i + '_preview.png');
   frames.forEach(function(s) { var p = new Image(); p.src = s; });
   var idx = 0;
-  setInterval(function() { idx = (idx + 1) % 12; img.src = frames[idx]; }, 80);
+  return setInterval(function() { idx = (idx + 1) % 12; img.src = frames[idx]; }, 80);
 })();
 
 var progressBar = document.getElementById('progress-bar');
@@ -72,10 +74,9 @@ canvasEl.addEventListener('webglcontextlost', function(e) {
 var PARTS = [
   'BallisticaKit.data.part.aa','BallisticaKit.data.part.ab',
   'BallisticaKit.data.part.ac','BallisticaKit.data.part.ad',
-  'BallisticaKit.data.part.ae','BallisticaKit.data.part.af',
-  'BallisticaKit.data.part.ag'
+  'BallisticaKit.data.part.ae','BallisticaKit.data.part.af'
 ];
-var TOTAL_SIZE = 260371936;
+var TOTAL_SIZE = 244972149;
 
 async function loadDataParts() {
   var chunks = [], loaded = 0;
@@ -127,7 +128,12 @@ async function startGame() {
     onRuntimeInitialized: function() {
       progressBar.style.width = '100%';
       statusEl.textContent = '';
+      clearInterval(_spinnerInterval);
       setTimeout(function() { overlay.classList.add('hidden'); }, 300);
+      // Start web gamepad host after a short delay.
+      setTimeout(function() {
+        if (window._startGamepadHost) window._startGamepadHost();
+      }, 2000);
     }
   };
 
@@ -150,6 +156,94 @@ async function startGame() {
 }
 
 startGame();
+
+// =====================================================
+// Web Gamepad Host (PeerJS)
+// =====================================================
+(function() {
+  var BUTTON_MAP = { jump: 0, punch: 1, bomb: 2, throw: 3, start: 5 };
+  var MENU_MAP = { start: 5, leave: 5 };
+  var clients = {}; // peerId -> { conn, slot, name }
+
+  function initPeerHost() {
+    var peerScript = document.createElement('script');
+    peerScript.src = 'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js';
+    peerScript.onload = function() {
+      // Generate short random ID (8 chars) to keep QR code small.
+      var shortId = 'bs' + Math.random().toString(36).substr(2, 6);
+      var peer = new Peer(shortId);
+      peer.on('open', function(id) {
+        // Build short gamepad URL for compact QR code.
+        var base = window.location.href.replace(/\/[^\/]*$/, '/');
+        var url = base + 'g/?id=' + id;
+        console.log('[gamepad] QR URL:', url);
+        Module.ccall('web_set_qr_url', null, ['string'], [url]);
+      });
+
+      peer.on('connection', function(conn) {
+        console.log('[gamepad] New connection from:', conn.peer);
+
+        conn.on('open', function() {
+          // Ask C++ to create a joystick for this client.
+          var name = conn.metadata && conn.metadata.name ? conn.metadata.name : ('Player ' + (Object.keys(clients).length + 1));
+          var slot = Module.ccall('web_gamepad_connect', 'number', ['string'], [name]);
+          if (slot < 0) {
+            console.warn('[gamepad] No free slots');
+            conn.close();
+            return;
+          }
+          clients[conn.peer] = { conn: conn, slot: slot, name: name };
+          console.log('[gamepad] Player "' + name + '" connected to slot', slot);
+        });
+
+        conn.on('data', function(msg) {
+          var c = clients[conn.peer];
+          if (!c) return;
+
+          if (msg.type === 'dpad') {
+            Module.ccall('web_gamepad_axis', null, ['number','number','number'], [c.slot, 0, msg.x]);
+            Module.ccall('web_gamepad_axis', null, ['number','number','number'], [c.slot, 1, msg.y]);
+          } else if (msg.type === 'button') {
+            var btn = BUTTON_MAP[msg.button];
+            if (btn !== undefined) {
+              Module.ccall('web_gamepad_button', null, ['number','number','number'], [c.slot, btn, msg.state === 'down' ? 1 : 0]);
+            }
+          } else if (msg.type === 'menu') {
+            var mbtn = MENU_MAP[msg.button];
+            if (mbtn !== undefined) {
+              Module.ccall('web_gamepad_button', null, ['number','number','number'], [c.slot, mbtn, msg.state === 'down' ? 1 : 0]);
+            }
+          }
+        });
+
+        conn.on('close', function() {
+          var c = clients[conn.peer];
+          if (c) {
+            Module.ccall('web_gamepad_disconnect', null, ['number'], [c.slot]);
+            delete clients[conn.peer];
+            }
+        });
+
+        conn.on('error', function() {
+          var c = clients[conn.peer];
+          if (c) {
+            Module.ccall('web_gamepad_disconnect', null, ['number'], [c.slot]);
+            delete clients[conn.peer];
+            }
+        });
+      });
+
+      peer.on('error', function(err) {
+        console.warn('[gamepad] PeerJS error:', err);
+      });
+    };
+    document.head.appendChild(peerScript);
+  }
+
+  // Start PeerJS host after engine runtime is ready.
+  // We hook into the onRuntimeInitialized that's set in startGame() above.
+  window._startGamepadHost = initPeerHost;
+})();
 </script>
 </body>
 </html>

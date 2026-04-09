@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>BombSquad Remote</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    background: #000;
+  }
+  canvas {
+    display: block;
+    width: 100%; height: 100%;
+  }
+</style>
+</head>
+<body>
+<canvas id="pad"></canvas>
+<script>
+(function() {
+  'use strict';
+
+  var canvas = document.getElementById('pad');
+  var ctx = canvas.getContext('2d');
+  var dpr = window.devicePixelRatio || 1;
+  var W, H;
+
+  // --- Assets ---
+  var images = {};
+  var assetList = [
+    'button_bomb', 'button_bomb_pressed',
+    'button_jump', 'button_jump_pressed',
+    'button_punch', 'button_punch_pressed',
+    'button_throw', 'button_throw_pressed',
+    'button_leave', 'button_settings', 'button_start',
+    'center', 'thumb', 'thumb_pressed', 'controllerbg'
+  ];
+  var loadedCount = 0;
+
+  assetList.forEach(function(name) {
+    var img = new Image();
+    img.onload = function() {
+      loadedCount++;
+      if (loadedCount === assetList.length) init();
+    };
+    img.src = name + '.png';
+    images[name] = img;
+  });
+
+  // --- State ---
+  var dpadState = { x: 0, y: 0 };  // -1..1
+  var dpadCenter = { x: 0, y: 0 }; // pixel position (floating)
+  var dpadTouchId = null;
+  var dpadBaseCenter = { x: 0, y: 0 }; // default center
+
+  var buttons = {
+    jump:  { pressed: false, touchId: null },
+    punch: { pressed: false, touchId: null },
+    bomb:  { pressed: false, touchId: null },
+    throw: { pressed: false, touchId: null }
+  };
+
+  var menuButtons = {
+    leave:    { pressed: false, touchId: null },
+    settings: { pressed: false, touchId: null },
+    start:    { pressed: false, touchId: null }
+  };
+
+  // Layout params (recalculated on resize)
+  var layout = {};
+
+  function resize() {
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    var unit = Math.min(W, H);
+    var scale = unit / 340;
+
+    // D-pad area - left side, closer to edge
+    var dpadR = 65 * scale;
+    dpadBaseCenter.x = W * 0.15;
+    dpadBaseCenter.y = H * 0.52;
+    dpadCenter.x = dpadBaseCenter.x;
+    dpadCenter.y = dpadBaseCenter.y;
+
+    // Action buttons - right side, closer to edge, larger
+    var btnR = 42 * scale;
+    var btnSpacing = 56 * scale;
+    var btnCX = W * 0.85;
+    var btnCY = H * 0.52;
+
+    layout.scale = scale;
+    layout.dpadR = dpadR;
+    layout.thumbR = 34 * scale;
+    layout.btnR = btnR;
+
+    layout.jump  = { x: btnCX,              y: btnCY + btnSpacing, r: btnR };  // bottom
+    layout.punch = { x: btnCX - btnSpacing,  y: btnCY,             r: btnR };  // left
+    layout.bomb  = { x: btnCX + btnSpacing,  y: btnCY,             r: btnR };  // right
+    layout.throw = { x: btnCX,              y: btnCY - btnSpacing, r: btnR };  // top
+
+    // Menu buttons - top
+    var menuBtnW = 36 * scale;
+    var menuBtnH = 36 * scale;
+    var menuY = 18 * scale;
+    layout.leave    = { x: W * 0.12, y: menuY, w: menuBtnW, h: menuBtnH };
+    layout.settings = { x: W * 0.5,  y: menuY, w: menuBtnW, h: menuBtnH };
+    layout.start    = { x: W * 0.88, y: menuY, w: menuBtnW, h: menuBtnH };
+
+    // D-pad touch zone
+    layout.dpadZoneRight = W * 0.45;
+
+    draw();
+  }
+
+  // --- Drawing ---
+  function draw() {
+    // Background
+    ctx.drawImage(images.controllerbg, 0, 0, W, H);
+
+    // D-pad base
+    var cimg = images.center;
+    var cSize = layout.dpadR * 2.2;
+    ctx.globalAlpha = 0.5;
+    ctx.drawImage(cimg, dpadCenter.x - cSize / 2, dpadCenter.y - cSize / 2, cSize, cSize);
+    ctx.globalAlpha = 1.0;
+
+    // D-pad thumb
+    var thumbImg = (dpadTouchId !== null) ? images.thumb_pressed : images.thumb;
+    var thumbSize = layout.thumbR * 2;
+    var thumbX = dpadCenter.x + dpadState.x * layout.dpadR;
+    var thumbY = dpadCenter.y + dpadState.y * layout.dpadR;
+    ctx.drawImage(thumbImg, thumbX - thumbSize / 2, thumbY - thumbSize / 2, thumbSize, thumbSize);
+
+    // Action buttons
+    drawButton('punch');
+    drawButton('jump');
+    drawButton('bomb');
+    drawButton('throw');
+
+    // Menu buttons
+    drawMenuButton('leave');
+    drawMenuButton('settings');
+    drawMenuButton('start');
+  }
+
+  function drawButton(name) {
+    var b = layout[name];
+    var pressed = buttons[name].pressed;
+    var img = pressed ? images['button_' + name + '_pressed'] : images['button_' + name];
+    var size = b.r * 2;
+    ctx.drawImage(img, b.x - size / 2, b.y - size / 2, size, size);
+  }
+
+  function drawMenuButton(name) {
+    var b = layout[name];
+    var img = images['button_' + name];
+    var pressed = menuButtons[name].pressed;
+    ctx.globalAlpha = pressed ? 0.6 : 1.0;
+    ctx.drawImage(img, b.x - b.w / 2, b.y - b.h / 2, b.w, b.h);
+    ctx.globalAlpha = 1.0;
+  }
+
+  // --- Touch handling ---
+  function getTouches(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    var changed = e.changedTouches;
+    for (var i = 0; i < changed.length; i++) {
+      var t = changed[i];
+      var x = t.clientX;
+      var y = t.clientY;
+      var id = t.identifier;
+
+      if (e.type === 'touchstart') {
+        handleTouchStart(id, x, y);
+      } else if (e.type === 'touchmove') {
+        handleTouchMove(id, x, y);
+      } else {
+        handleTouchEnd(id);
+      }
+    }
+    draw();
+  }
+
+
+  function handleTouchStart(id, x, y) {
+    // Check menu buttons first
+    for (var name in menuButtons) {
+      var mb = layout[name];
+      if (Math.abs(x - mb.x) < mb.w && Math.abs(y - mb.y) < mb.h) {
+        menuButtons[name].pressed = true;
+        menuButtons[name].touchId = id;
+        sendMenuButton(name, true);
+        return;
+      }
+    }
+
+    // D-pad zone (left half)
+    if (x < layout.dpadZoneRight && dpadTouchId === null) {
+      dpadTouchId = id;
+      // Floating: move center to touch point
+      dpadCenter.x = x;
+      dpadCenter.y = y;
+      dpadState.x = 0;
+      dpadState.y = 0;
+      sendDpad();
+      return;
+    }
+
+    // Action buttons (right half)
+    var closest = null;
+    var closestDist = Infinity;
+    for (var bname in buttons) {
+      var b = layout[bname];
+      var dx = x - b.x;
+      var dy = y - b.y;
+      var dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < b.r * 1.6 && dist < closestDist) {
+        closest = bname;
+        closestDist = dist;
+      }
+    }
+    if (closest) {
+      buttons[closest].pressed = true;
+      buttons[closest].touchId = id;
+      sendButton(closest, true);
+    }
+  }
+
+  function handleTouchMove(id, x, y) {
+    // D-pad
+    if (id === dpadTouchId) {
+      var dx = x - dpadCenter.x;
+      var dy = y - dpadCenter.y;
+      var maxR = layout.dpadR;
+
+      // Floating: if finger moves far, drag center
+      var dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > maxR * 1.5) {
+        var angle = Math.atan2(dy, dx);
+        dpadCenter.x = x - Math.cos(angle) * maxR;
+        dpadCenter.y = y - Math.sin(angle) * maxR;
+        dx = x - dpadCenter.x;
+        dy = y - dpadCenter.y;
+      }
+
+      dpadState.x = Math.max(-1, Math.min(1, dx / maxR));
+      dpadState.y = Math.max(-1, Math.min(1, dy / maxR));
+      sendDpad();
+      return;
+    }
+
+    // Action buttons: allow sliding between buttons
+    for (var name in buttons) {
+      if (buttons[name].touchId === id) {
+        var b = layout[name];
+        var bdx = x - b.x;
+        var bdy = y - b.y;
+        if (Math.sqrt(bdx * bdx + bdy * bdy) > b.r * 2) {
+          buttons[name].pressed = false;
+          buttons[name].touchId = null;
+          sendButton(name, false);
+
+          // Check if slid to another button
+          var closest = null;
+          var closestDist = Infinity;
+          for (var bname in buttons) {
+            var b2 = layout[bname];
+            var d2x = x - b2.x;
+            var d2y = y - b2.y;
+            var d2 = Math.sqrt(d2x * d2x + d2y * d2y);
+            if (d2 < b2.r * 1.6 && d2 < closestDist) {
+              closest = bname;
+              closestDist = d2;
+            }
+          }
+          if (closest) {
+            buttons[closest].pressed = true;
+            buttons[closest].touchId = id;
+            sendButton(closest, true);
+          }
+        }
+        return;
+      }
+    }
+  }
+
+  function handleTouchEnd(id) {
+    // D-pad
+    if (id === dpadTouchId) {
+      dpadTouchId = null;
+      dpadState.x = 0;
+      dpadState.y = 0;
+      dpadCenter.x = dpadBaseCenter.x;
+      dpadCenter.y = dpadBaseCenter.y;
+      sendDpad();
+      return;
+    }
+
+    // Action buttons
+    for (var name in buttons) {
+      if (buttons[name].touchId === id) {
+        buttons[name].pressed = false;
+        buttons[name].touchId = null;
+        sendButton(name, false);
+        return;
+      }
+    }
+
+    // Menu buttons
+    for (var name in menuButtons) {
+      if (menuButtons[name].touchId === id) {
+        menuButtons[name].pressed = false;
+        menuButtons[name].touchId = null;
+        sendMenuButton(name, false);
+        return;
+      }
+    }
+  }
+
+  // --- Communication ---
+  // PeerJS connection (will be wired up later)
+  var connection = null;
+
+  function sendDpad() {
+    sendMsg({ type: 'dpad', x: dpadState.x, y: dpadState.y });
+  }
+
+  function sendButton(name, pressed) {
+    sendMsg({ type: 'button', button: name, state: pressed ? 'down' : 'up' });
+  }
+
+  function sendMenuButton(name, pressed) {
+    sendMsg({ type: 'menu', button: name, state: pressed ? 'down' : 'up' });
+  }
+
+  function sendMsg(msg) {
+    if (connection && connection.open) {
+      connection.send(msg);
+    }
+  }
+
+  // --- PeerJS connection ---
+  function setupConnection() {
+    var params = new URLSearchParams(window.location.search);
+    var peerId = params.get('id');
+    if (!peerId) {
+      showStatus('Scan QR code in game to connect');
+      return;
+    }
+
+    showStatus('Connecting...');
+
+    var script = document.createElement('script');
+    script.src = 'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js';
+    script.onload = function() {
+      var peer = new Peer();
+      peer.on('open', function() {
+        showStatus('Connecting to game...');
+        connection = peer.connect(peerId, {
+          reliable: true,
+          metadata: { name: 'Player' }
+        });
+        connection.on('open', function() {
+          showStatus(null);
+          // Vibrate on connect
+          if (navigator.vibrate) navigator.vibrate(50);
+        });
+        connection.on('close', function() {
+          connection = null;
+          showStatus('Disconnected. Reload to reconnect.');
+        });
+        connection.on('error', function() {
+          showStatus('Connection error');
+        });
+      });
+      peer.on('error', function(err) {
+        showStatus('Error: ' + err.message);
+      });
+    };
+    document.head.appendChild(script);
+  }
+
+  var statusOverlay = null;
+  function showStatus(text) {
+    if (!statusOverlay) {
+      statusOverlay = document.createElement('div');
+      statusOverlay.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;' +
+        'font:18px -apple-system,sans-serif;color:rgba(255,255,255,0.7);text-align:center;padding:20px;' +
+        'pointer-events:none;z-index:10;';
+      document.body.appendChild(statusOverlay);
+    }
+    if (text) {
+      statusOverlay.textContent = text;
+      statusOverlay.style.display = 'flex';
+    } else {
+      statusOverlay.style.display = 'none';
+    }
+  }
+
+  // --- Init ---
+  function init() {
+    resize();
+    window.addEventListener('resize', resize);
+    canvas.addEventListener('touchstart', getTouches, { passive: false });
+    canvas.addEventListener('touchmove', getTouches, { passive: false });
+    canvas.addEventListener('touchend', getTouches, { passive: false });
+    canvas.addEventListener('touchcancel', getTouches, { passive: false });
+
+    // Prevent all default gestures
+    document.addEventListener('gesturestart', function(e) { e.preventDefault(); });
+    document.addEventListener('gesturechange', function(e) { e.preventDefault(); });
+    document.addEventListener('gestureend', function(e) { e.preventDefault(); });
+
+    // Mouse events for desktop testing
+    var mouseDown = false;
+    canvas.addEventListener('mousedown', function(e) {
+      e.preventDefault();
+      mouseDown = true;
+      handleTouchStart(999, e.clientX, e.clientY);
+      draw();
+    });
+    canvas.addEventListener('mousemove', function(e) {
+      if (mouseDown) {
+        handleTouchMove(999, e.clientX, e.clientY);
+        draw();
+      }
+    });
+    window.addEventListener('mouseup', function(e) {
+      if (mouseDown) {
+        mouseDown = false;
+        handleTouchEnd(999);
+        draw();
+      }
+    });
+
+    console.log('[gamepad] Init complete, W=' + W + ' H=' + H + ' layout ready');
+
+    setupConnection();
+    draw();
+  }
+})();
+</script>
+</body>
+</html>
