@@ -513,6 +513,38 @@ class MainMenuWindow(bui.MainWindow):
             right_widget=bui.get_special_widget('store_button'),
         )
 
+        # Web gamepad QR code — centered above play button with bg.
+        from bauiv1lib.gamepadqr import GamepadQRWidget, is_web
+        if is_web():
+            qr_size = 120.0
+            qr_y = (
+                button_y_offs
+                + play_button_height * play_button_scale
+                + 80
+            )
+            # Dark square background behind QR (same style as menu buttons).
+            pad_h = 36.0
+            pad_v = 16.0
+            bui.buttonwidget(
+                parent=self._root_widget,
+                position=(
+                    self._width * 0.5 - (qr_size + pad_h) * 0.5,
+                    qr_y - (qr_size + pad_v) * 0.5 - 12,
+                ),
+                size=(qr_size + pad_h, qr_size + pad_v + 24),
+                button_type='square',
+                color=(0.35, 0.25, 0.45),
+                label='',
+                autoselect=False,
+                enable_sound=False,
+                selectable=False,
+            )
+            self._gamepad_qr = GamepadQRWidget(
+                parent=self._root_widget,
+                position=(self._width * 0.5, qr_y),
+                size=qr_size,
+            )
+
     def _quit(self) -> None:
         # pylint: disable=cyclic-import
         from bauiv1lib.confirm import QuitWindow

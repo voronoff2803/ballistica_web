@@ -32,6 +32,11 @@ local.properties
 .claude/
 build-ios/
 build-ios-device/
+ballisticakit-web/build/
+ballisticakit-web/deps/
+ballisticakit-web/assets_*
+ballisticakit-web/data
+emsdk/
 PUBSYNC_IN_PROGRESS
 _fulltest_buildfile_*
 ballistica_files/

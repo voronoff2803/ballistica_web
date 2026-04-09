@@ -13,19 +13,29 @@
 #include "ballistica/base/base.h"
 #include "ballistica/base/graphics/graphics.h"
 #include "ballistica/base/graphics/graphics_server.h"
+#include "ballistica/base/graphics/support/screen_messages.h"
 #include "ballistica/base/input/input.h"
+#include "ballistica/base/input/device/joystick_input.h"
 #include "ballistica/base/logic/logic.h"
+#include "ballistica/base/assets/assets.h"
 #include "ballistica/base/assets/assets_server.h"
+#include "ballistica/base/audio/audio.h"
 #include "ballistica/base/audio/audio_server.h"
 #include "ballistica/base/dynamics/bg/bg_dynamics_server.h"
 #include "ballistica/shared/foundation/event_loop.h"
+#include "ballistica/shared/generic/utils.h"
+#include "ballistica/shared/math/vector3f.h"
 
 #include "ballistica/core/platform/support/min_sdl.h"
 
 #include "app_adapter_web.h"
 
-// ---- Input callbacks ----
 static int g_canvas_w = 1, g_canvas_h = 1;
+
+// ---- Web Gamepad QR URL storage ----
+static std::string g_gamepad_url;
+
+// ---- Input callbacks ----
 
 static EM_BOOL OnMouseDown(int type, const EmscriptenMouseEvent* e, void*) {
   using namespace ballistica::base;
@@ -183,12 +193,142 @@ static void SyncFS() {
 // ---- IDBFS ready callback ----
 static bool g_idbfs_ready = false;
 
+// ---- Web Gamepad support (PeerJS remotes) ----
+static const int kMaxWebGamepads = 8;
+
+struct WebGamepadClient {
+  bool in_use{};
+  ballistica::base::JoystickInput* joystick{};
+  std::string name;
+};
+static WebGamepadClient g_web_gamepads[kMaxWebGamepads]{};
+
 extern "C" {
 EMSCRIPTEN_KEEPALIVE void web_on_idbfs_ready() {
+  // Remove stale gamepad URL from previous session.
+  remove("/home/web_user/.ballisticakit/gamepad_url.txt");
   g_idbfs_ready = true;
   printf("[web] IDBFS ready.\n");
 }
+
+EMSCRIPTEN_KEEPALIVE int web_gamepad_connect(const char* name) {
+  using namespace ballistica;
+  using namespace ballistica::base;
+  if (!g_base) return -1;
+
+  // Find free slot.
+  int slot = -1;
+  for (int i = 0; i < kMaxWebGamepads; i++) {
+    if (!g_web_gamepads[i].in_use) { slot = i; break; }
+  }
+  if (slot == -1) {
+    printf("[web] No free gamepad slots.\n");
+    return -1;
+  }
+
+  std::string sname = Utils::GetValidUTF8(name, "wgc");
+  std::string dev_name = "Web Gamepad: " + sname;
+  printf("[web] Gamepad connected: %s (slot %d)\n", dev_name.c_str(), slot);
+
+  auto* js = Object::NewDeferred<JoystickInput>(
+      -1,        // not an SDL joystick
+      dev_name,  // device name
+      false,     // don't allow configuring
+      true);     // calibrate (v2-style)
+  js->set_is_remote_app(true);
+
+  if (Utils::UTF8StringLength(sname.c_str()) <= 10) {
+    js->set_custom_default_player_name(sname);
+  }
+
+  g_web_gamepads[slot].in_use = true;
+  g_web_gamepads[slot].joystick = js;
+  g_web_gamepads[slot].name = sname;
+  g_base->input->PushAddInputDeviceCall(js, false);
+
+  // Show connection message.
+  std::string msg =
+      g_base->assets->GetResourceString("controllerConnectedText");
+  Utils::StringReplaceOne(&msg, "${CONTROLLER}", sname);
+  g_base->logic->event_loop()->PushCall([msg] {
+    g_base->graphics->screenmessages->AddScreenMessage(
+        msg, false, ballistica::Vector3f(1, 1, 1));
+  });
+  g_base->logic->event_loop()->PushCall([] {
+    if (g_base->assets->asset_loads_allowed()) {
+      g_base->audio->SafePlaySysSound(base::SysSoundID::kGunCock);
+    }
+  });
+
+  return slot;
 }
+
+EMSCRIPTEN_KEEPALIVE void web_gamepad_disconnect(int slot) {
+  using namespace ballistica::base;
+  if (slot < 0 || slot >= kMaxWebGamepads) return;
+  auto& client = g_web_gamepads[slot];
+  if (!client.in_use || !client.joystick) return;
+
+  printf("[web] Gamepad disconnected: slot %d\n", slot);
+
+  std::string msg =
+      g_base->assets->GetResourceString("controllerDisconnectedText");
+  ballistica::Utils::StringReplaceOne(&msg, "${CONTROLLER}", client.name);
+  g_base->logic->event_loop()->PushCall([msg] {
+    g_base->graphics->screenmessages->AddScreenMessage(
+        msg, false, ballistica::Vector3f(1, 1, 1));
+  });
+  g_base->logic->event_loop()->PushCall(
+      [] { g_base->audio->SafePlaySysSound(SysSoundID::kCorkPop); });
+
+  g_base->input->PushRemoveInputDeviceCall(client.joystick, false);
+  client.joystick = nullptr;
+  client.in_use = false;
+}
+
+EMSCRIPTEN_KEEPALIVE void web_gamepad_button(int slot, int button, int pressed) {
+  using namespace ballistica::base;
+  if (slot < 0 || slot >= kMaxWebGamepads) return;
+  auto& client = g_web_gamepads[slot];
+  if (!client.in_use || !client.joystick) return;
+
+  SDL_Event e{};
+  e.type = pressed ? SDL_JOYBUTTONDOWN : SDL_JOYBUTTONUP;
+  e.jbutton.button = static_cast<uint8_t>(button);
+  g_base->input->PushJoystickEvent(e, client.joystick);
+}
+
+EMSCRIPTEN_KEEPALIVE void web_gamepad_axis(int slot, int axis, float value) {
+  using namespace ballistica::base;
+  if (slot < 0 || slot >= kMaxWebGamepads) return;
+  auto& client = g_web_gamepads[slot];
+  if (!client.in_use || !client.joystick) return;
+
+  SDL_Event e{};
+  e.type = SDL_JOYAXISMOTION;
+  e.jaxis.axis = static_cast<uint8_t>(axis);
+  e.jaxis.value = static_cast<int16_t>(32767.0f * value);
+  g_base->input->PushJoystickEvent(e, client.joystick);
+}
+
+EMSCRIPTEN_KEEPALIVE void web_set_qr_url(const char* url) {
+  g_gamepad_url = url;
+  printf("[web] Gamepad URL set: %s\n", url);
+
+  // Write URL to a file so Python can read it.
+  FILE* f = fopen("/home/web_user/.ballisticakit/gamepad_url.txt", "w");
+  if (f) {
+    fputs(url, f);
+    fclose(f);
+  }
+
+}
+
+EMSCRIPTEN_KEEPALIVE const char* web_get_gamepad_url() {
+  return g_gamepad_url.c_str();
+}
+
+} // extern "C"
 
 // ---- Global state ----
 static bool g_engine_started = false;

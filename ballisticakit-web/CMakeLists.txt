@@ -124,6 +124,7 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
 
 target_link_options(${PROJECT_NAME} PRIVATE
     -sALLOW_MEMORY_GROWTH=1
+    -sALLOW_TABLE_GROWTH=1
     -sTOTAL_MEMORY=268435456       # 256MB initial
     -sWASM_BIGINT=1
     -sFORCE_FILESYSTEM=1
@@ -142,6 +143,7 @@ target_link_options(${PROJECT_NAME} PRIVATE
     -sMAX_WEBGL_VERSION=2
     -sFULL_ES3=1
     -O2
+    "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap']"
     # Preload Python stdlib into virtual filesystem at ./pylib
     # (the engine looks for stdlib at <data_dir>/pylib).
     "--preload-file=${PYTHON_STDLIB_DIR}@/pylib"

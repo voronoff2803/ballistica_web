@@ -100,6 +100,7 @@ class JoinActivity(Activity[EmptyPlayer, EmptyTeam]):
         babase.set_analytics_screen('Joining Screen')
 
 
+
 class TransitionActivity(Activity[EmptyPlayer, EmptyTeam]):
     """A simple overlay to fade out/in.
 

@@ -91,6 +91,15 @@ class InGameMenuWindow(bui.MainWindow):
         h, v, scale = positions[self._p_index]
         self._p_index += 1
 
+        # Web gamepad QR code at top of menu.
+        if self._has_gamepad_qr:
+            from bauiv1lib.gamepadqr import GamepadQRWidget
+            self._gamepad_qr = GamepadQRWidget(
+                parent=self._root_widget,
+                position=(self._width * 0.5, self._height - 65),
+                size=110.0,
+            )
+
         # If we're in a replay, we have a 'Leave Replay' button.
         if bs.is_in_replay():
             self._end_button = bui.buttonwidget(
@@ -345,6 +354,13 @@ class InGameMenuWindow(bui.MainWindow):
             # In this case we have a leave *and* a disconnect button.
             self._height += 50
         self._height += 50 * (len(custom_menu_entries))
+
+        # Add extra space for web gamepad QR at top.
+        from bauiv1lib.gamepadqr import is_web
+        self._has_gamepad_qr = is_web()
+        if self._has_gamepad_qr:
+            self._height += 160
+
         uiscale = bui.app.ui_v1.uiscale
         bui.containerwidget(
             edit=self._root_widget,
@@ -357,6 +373,8 @@ class InGameMenuWindow(bui.MainWindow):
         )
         h = 125.0
         v = self._height - 80.0 if self._input_player else self._height - 60
+        if self._has_gamepad_qr:
+            v -= 160  # Push buttons down to make room for QR at top.
         h_offset = 0
         d_h_offset = 0
         v_offset = -50
