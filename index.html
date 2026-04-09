@@ -346,30 +346,21 @@ startGame();
   var gameConn = null;  // active DataChannel connection for game packets
   var hostPeer = null;  // PeerJS instance when hosting
 
-  // ICE servers for NAT traversal.
-  var iceConfig = {
-    config: {
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        {
-          urls: 'turn:openrelay.metered.ca:80',
-          username: 'openrelayproject',
-          credential: 'openrelayproject'
-        },
-        {
-          urls: 'turn:openrelay.metered.ca:443',
-          username: 'openrelayproject',
-          credential: 'openrelayproject'
-        },
-        {
-          urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-          username: 'openrelayproject',
-          credential: 'openrelayproject'
-        }
-      ]
-    }
-  };
+  // ICE servers — fetched from metered.ca TURN service.
+  var iceConfig = { config: { iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' }
+  ]}};
+
+  // Fetch TURN credentials from metered.ca.
+  fetch('https://ballistica.metered.live/api/v1/turn/credentials?apiKey=9677e4d2b4b1d914a0fe2e0c1310feb08c10')
+    .then(function(r) { return r.json(); })
+    .then(function(servers) {
+      iceConfig = { config: { iceServers: servers } };
+      console.log('[p2p] TURN servers loaded:', servers.length);
+    })
+    .catch(function() {
+      console.warn('[p2p] Failed to load TURN servers, STUN only');
+    });
 
   function feedPacket(data) {
     if (!(data instanceof ArrayBuffer)) return;
@@ -448,19 +439,28 @@ startGame();
         if (callback) { callback(false); callback = null; }
       });
 
-      // Log ICE negotiation progress.
-      var checkIce = setInterval(function() {
-        if (!conn.peerConnection) { clearInterval(checkIce); return; }
-        var state = conn.peerConnection.iceConnectionState;
-        console.log('[p2p] ICE:', state);
-        if (state === 'connected' || state === 'completed' || state === 'failed' || state === 'closed') {
-          clearInterval(checkIce);
-          if (state === 'failed') {
-            console.warn('[p2p] ICE failed — NAT traversal unsuccessful');
-            if (callback) { callback(false); callback = null; }
+      // Log ICE negotiation progress via event listener.
+      var iceLogged = {};
+      var iceCheck = setInterval(function() {
+        var pc = conn.peerConnection;
+        if (!pc) return;
+        clearInterval(iceCheck);
+        pc.oniceconnectionstatechange = function() {
+          var s = pc.iceConnectionState;
+          if (!iceLogged[s]) {
+            iceLogged[s] = true;
+            console.log('[p2p] ICE:', s);
+            if (s === 'failed') {
+              console.warn('[p2p] NAT traversal failed — need TURN server');
+              if (callback) { callback(false); callback = null; }
+            }
           }
-        }
-      }, 1000);
+        };
+        pc.onicegatheringstatechange = function() {
+          console.log('[p2p] ICE gathering:', pc.iceGatheringState);
+        };
+        console.log('[p2p] ICE negotiation started');
+      }, 100);
     });
     peer.on('disconnected', function() {
       console.warn('[p2p] Client lost signaling server');
