@@ -167,6 +167,23 @@ async function startGame() {
 startGame();
 
 // =====================================================
+// Shared ICE config (STUN + metered.ca TURN)
+// Used by both gamepad host and P2P multiplayer.
+// =====================================================
+window._iceConfig = { config: { iceServers: [
+  { urls: 'stun:stun.l.google.com:19302' }
+]}};
+fetch('https://ballistica.metered.live/api/v1/turn/credentials?apiKey=9677e4d2b4b1d914a0fe2e0c1310feb08c10')
+  .then(function(r) { return r.json(); })
+  .then(function(servers) {
+    window._iceConfig = { config: { iceServers: servers } };
+    console.log('[ice] TURN servers loaded:', servers.length);
+  })
+  .catch(function() {
+    console.warn('[ice] Failed to load TURN servers, STUN only');
+  });
+
+// =====================================================
 // Web Gamepad Host (PeerJS)
 // =====================================================
 (function() {
@@ -180,7 +197,7 @@ startGame();
     peerScript.onload = function() {
       // Generate short random ID (8 chars) to keep QR code small.
       var shortId = 'bs' + Math.random().toString(36).substr(2, 6);
-      var peer = new Peer(shortId);
+      var peer = new Peer(shortId, window._iceConfig);
       peer.on('open', function(id) {
         // Build short gamepad URL for compact QR code.
         var base = window.location.href.replace(/\/[^\/]*$/, '/');
@@ -346,22 +363,6 @@ startGame();
   var gameConn = null;  // active DataChannel connection for game packets
   var hostPeer = null;  // PeerJS instance when hosting
 
-  // ICE servers — fetched from metered.ca TURN service.
-  var iceConfig = { config: { iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' }
-  ]}};
-
-  // Fetch TURN credentials from metered.ca.
-  fetch('https://ballistica.metered.live/api/v1/turn/credentials?apiKey=9677e4d2b4b1d914a0fe2e0c1310feb08c10')
-    .then(function(r) { return r.json(); })
-    .then(function(servers) {
-      iceConfig = { config: { iceServers: servers } };
-      console.log('[p2p] TURN servers loaded:', servers.length);
-    })
-    .catch(function() {
-      console.warn('[p2p] Failed to load TURN servers, STUN only');
-    });
-
   function feedPacket(data) {
     if (!(data instanceof ArrayBuffer)) return;
     var arr = new Uint8Array(data);
@@ -380,7 +381,7 @@ startGame();
 
     var id = 'bs' + Math.random().toString(36).substr(2, 8);
     console.log('[p2p] Creating host peer:', id);
-    hostPeer = new Peer(id, iceConfig);
+    hostPeer = new Peer(id, window._iceConfig);
 
     hostPeer.on('open', function(peerId) {
       console.log('[p2p] Signaling ready, hosting as', peerId);
@@ -419,7 +420,7 @@ startGame();
     if (gameConn) { gameConn.close(); gameConn = null; }
 
     console.log('[p2p] Creating client peer');
-    var peer = new Peer(iceConfig);
+    var peer = new Peer(window._iceConfig);
     peer.on('open', function(myId) {
       console.log('[p2p] Signaling ready as', myId, '→ joining', code);
       var conn = peer.connect(code, { reliable: true, serialization: 'binary' });
